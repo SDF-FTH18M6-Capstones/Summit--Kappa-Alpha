@@ -1,6 +1,6 @@
-# Chama Management Application
+# Summit — Chama Management Application
 
-A full-stack application for managing a chama (community savings group). The frontend serves public information and role-based member dashboards; the backend provides authentication, membership, finance, and group-operations APIs.
+Summit is a full-stack application for managing a chama (community savings group). The frontend serves public information and role-based member dashboards; the backend provides authentication, membership, finance, and group-operations APIs.
 
 The trees below describe the **target project structure**. They document the intended application and are not a claim that every listed feature or file is already implemented in this repository.
 
@@ -50,6 +50,10 @@ chama-backend/
 ```
 
 The intended data model includes `Chama`, `User`, `JoinRequest`, `Contribution`, `Loan`, `Penalty`, `Meeting`, `Announcement`, `Project`, and `AuditLog`. The API is organized around authentication, chama membership, finance, and group operations. Planned finance safeguards include rejecting duplicate M-Pesa references; access to private operations is role-controlled.
+
+### Database diagram
+
+The entity-relationship diagram is available interactively on dbdiagram.io: [Summit ERD](https://dbdiagram.io/d/Summit-erd-6af2efc76fcc7ae4c7aa3640). A static copy is kept in `chama-backend/docs/erd.png`.
 
 ## Frontend — `chama-frontend/`
 
@@ -131,5 +135,3 @@ cd chama-frontend
 npm install
 npm run dev
 ```
-
-Do not commit local `.env` files or credentials. Refer to each application's README for its complete setup, testing, and deployment instructions.
