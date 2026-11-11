@@ -5,6 +5,21 @@ name = "pypi"
 
 [packages]
 flask = "*"
+flask-sqlalchemy = "*"
+flask-migrate = "*"
+flask-cors = "*"
+flask-jwt-extended = "*"
+flask-bcrypt = "*"
+marshmallow = "*"
+flask-marshmallow = "*"
+marshmallow-sqlalchemy = "*"
+sendgrid = "*"
+cloudinary = "*"
+pillow = "*"
+flasgger = "*"
+pytest = "*"
+pytest-cov = "*"
+python-dotenv = "*"
 
 [dev-packages]
 
