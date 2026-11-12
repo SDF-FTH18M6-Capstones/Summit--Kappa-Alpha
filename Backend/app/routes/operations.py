@@ -1,7 +1,8 @@
-from datetime import datetime, timezone
+from datetime import timezone
 
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
+from marshmallow import ValidationError
 
 from app import db
 from app.models import (
@@ -12,13 +13,20 @@ from app.models import (
     Membership,
     User,
 )
+from app.schemas import (
+    AnnouncementSchema,
+    MeetingAttendanceSchema,
+    MeetingMinutesSchema,
+    MeetingSchema,
+)
 
 operations_bp = Blueprint("operations", __name__)
 
 OFFICIAL_ROLES = ("secretary", "chama_admin")
-ATTENDANCE_STATUSES = ("present", "absent", "apology")
 MAX_PER_PAGE = 100
 
+
+# ------------------------------------------------------------------ helpers
 
 def _val(value):
     """Plain string for an enum member or a string column."""
@@ -27,6 +35,24 @@ def _val(value):
 
 def _iso(value):
     return value.isoformat() if value else None
+
+
+def _naive_utc(value):
+    """Store datetimes as naive UTC, whatever offset the client sent."""
+    if value is not None and value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
+
+
+def _load(schema_class, payload):
+    """Validate a payload with a Marshmallow schema from app/schemas.py.
+
+    Returns (data, error_response); exactly one of the two is None.
+    """
+    try:
+        return schema_class().load(payload), None
+    except ValidationError as err:
+        return None, (jsonify({"errors": err.messages}), 400)
 
 
 def _access(chama_id, officials_only=False):
@@ -48,40 +74,9 @@ def _access(chama_id, officials_only=False):
     return user, None
 
 
-def _parse_datetime(value):
-    """ISO 8601 string -> naive UTC datetime, or None."""
-    if not isinstance(value, str):
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is not None:
-        parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
-    return parsed
-
-
-def _read_text(data, key, errors, max_len=None, required=False):
-    value = data.get(key)
-    if value is None or (isinstance(value, str) and not value.strip()):
-        if required:
-            errors[key] = f"{key} is required"
-        return None
-    if not isinstance(value, str):
-        errors[key] = f"{key} must be text"
-        return None
-    value = value.strip()
-    if max_len and len(value) > max_len:
-        errors[key] = f"{key} must be at most {max_len} characters"
-        return None
-    return value
-
-
 def _paginate(query, serializer):
-    page = request.args.get("page", 1, type=int)
-    per_page = request.args.get("per_page", 20, type=int)
-    page = max(page, 1)
-    per_page = min(max(per_page, 1), MAX_PER_PAGE)
+    page = max(request.args.get("page", 1, type=int), 1)
+    per_page = min(max(request.args.get("per_page", 20, type=int), 1), MAX_PER_PAGE)
 
     result = query.paginate(page=page, per_page=per_page, error_out=False)
     return jsonify(
@@ -151,6 +146,8 @@ def _get_meeting_or_404(meeting_id):
     return meeting, None
 
 
+# ----------------------------------------------------------------- meetings
+
 @operations_bp.route("/chamas/<int:chama_id>/meetings", methods=["POST"])
 @jwt_required()
 def create_meeting(chama_id):
@@ -158,23 +155,16 @@ def create_meeting(chama_id):
     if error:
         return error
 
-    data = request.get_json(silent=True) or {}
-    errors = {}
-    title = _read_text(data, "title", errors, max_len=200, required=True)
-    venue = _read_text(data, "venue", errors, max_len=150)
-    agenda = _read_text(data, "agenda", errors)
-    meeting_date = _parse_datetime(data.get("meeting_date"))
-    if meeting_date is None:
-        errors["meeting_date"] = "A valid ISO 8601 date and time is required"
-    if errors:
-        return jsonify({"errors": errors}), 400
+    data, error = _load(MeetingSchema, request.get_json(silent=True) or {})
+    if error:
+        return error
 
     meeting = Meeting(
         chama_id=chama_id,
-        title=title,
-        meeting_date=meeting_date,
-        venue=venue,
-        agenda=agenda,
+        title=data["title"],
+        meeting_date=_naive_utc(data["meeting_date"]),
+        venue=data.get("venue"),
+        agenda=data.get("agenda"),
         created_by=user.id,
     )
     db.session.add(meeting)
@@ -193,6 +183,8 @@ def list_meetings(chama_id):
     return _paginate(query, _serialize_meeting)
 
 
+# ------------------------------------------------------------------ minutes
+
 @operations_bp.route("/meetings/<int:meeting_id>/minutes", methods=["POST"])
 @jwt_required()
 def create_minutes(meeting_id):
@@ -206,18 +198,15 @@ def create_minutes(meeting_id):
     if MeetingMinutes.query.filter_by(meeting_id=meeting.id).first() is not None:
         return jsonify({"error": "Minutes already exist for this meeting"}), 409
 
-    data = request.get_json(silent=True) or {}
-    errors = {}
-    text = _read_text(data, "minutes", errors, required=True)
-    file_url = _read_text(data, "file_url", errors, max_len=500)
-    if errors:
-        return jsonify({"errors": errors}), 400
+    data, error = _load(MeetingMinutesSchema, request.get_json(silent=True) or {})
+    if error:
+        return error
 
     minutes = MeetingMinutes(
         meeting_id=meeting.id,
         recorded_by=user.id,
-        minutes=text,
-        file_url=file_url,
+        minutes=data["minutes"],
+        file_url=data.get("file_url"),
     )
     db.session.add(minutes)
     db.session.commit()
@@ -240,6 +229,8 @@ def get_minutes(meeting_id):
     return jsonify(_serialize_minutes(minutes)), 200
 
 
+# --------------------------------------------------------------- attendance
+
 @operations_bp.route("/meetings/<int:meeting_id>/attendance", methods=["POST"])
 @jwt_required()
 def record_attendance(meeting_id):
@@ -255,49 +246,47 @@ def record_attendance(meeting_id):
     if error:
         return error
 
-    data = request.get_json(silent=True) or {}
-    entries = data.get("records") if isinstance(data.get("records"), list) else [data]
+    payload = request.get_json(silent=True) or {}
+    is_bulk = isinstance(payload.get("records"), list)
+    entries = payload["records"] if is_bulk else [payload]
     if not entries:
         return jsonify({"error": "No attendance records supplied"}), 400
 
+    schema = MeetingAttendanceSchema()
     errors = {}
     cleaned = []
     for index, entry in enumerate(entries):
-        problems = {}
-        entry = entry if isinstance(entry, dict) else {}
-        membership_id = entry.get("membership_id")
-        status = entry.get("status")
+        try:
+            item = schema.load(entry)
+        except ValidationError as err:
+            errors[str(index)] = err.messages
+            continue
 
-        if not isinstance(membership_id, int) or isinstance(membership_id, bool):
-            problems["membership_id"] = "membership_id must be an integer"
-        else:
-            membership = db.session.get(Membership, membership_id)
-            if membership is None or membership.chama_id != meeting.chama_id:
-                problems["membership_id"] = "Member does not belong to this chama"
-
-        if status not in ATTENDANCE_STATUSES:
-            problems["status"] = f"status must be one of: {', '.join(ATTENDANCE_STATUSES)}"
-
-        if problems:
-            errors[str(index)] = problems
-        else:
-            cleaned.append((membership_id, status))
+        # Business rule the schema can't check: the member must belong to
+        # the same chama as the meeting.
+        membership = db.session.get(Membership, item["membership_id"])
+        if membership is None or membership.chama_id != meeting.chama_id:
+            errors[str(index)] = {"membership_id": ["Member does not belong to this chama."]}
+            continue
+        cleaned.append(item)
 
     if errors:
-        return jsonify({"errors": errors}), 400
+        return jsonify({"errors": errors if is_bulk else errors["0"]}), 400
 
     saved = []
-    for membership_id, status in cleaned:
+    for item in cleaned:
         record = MeetingAttendance.query.filter_by(
-            meeting_id=meeting.id, membership_id=membership_id
+            meeting_id=meeting.id, membership_id=item["membership_id"]
         ).first()
         if record is None:
             record = MeetingAttendance(
-                meeting_id=meeting.id, membership_id=membership_id, status=status
+                meeting_id=meeting.id,
+                membership_id=item["membership_id"],
+                status=item["status"],
             )
             db.session.add(record)
         else:
-            record.status = status
+            record.status = item["status"]
         saved.append(record)
 
     db.session.commit()
@@ -327,6 +316,8 @@ def get_attendance(meeting_id):
     ), 200
 
 
+# ------------------------------------------------------------ announcements
+
 @operations_bp.route("/chamas/<int:chama_id>/announcements", methods=["POST"])
 @jwt_required()
 def create_announcement(chama_id):
@@ -334,20 +325,16 @@ def create_announcement(chama_id):
     if error:
         return error
 
-    data = request.get_json(silent=True) or {}
-    errors = {}
-    title = _read_text(data, "title", errors, max_len=200, required=True)
-    content = _read_text(data, "content", errors, required=True)
-    image_url = _read_text(data, "image_url", errors, max_len=500)
-    if errors:
-        return jsonify({"errors": errors}), 400
+    data, error = _load(AnnouncementSchema, request.get_json(silent=True) or {})
+    if error:
+        return error
 
     announcement = Announcement(
         chama_id=chama_id,
         created_by=user.id,
-        title=title,
-        content=content,
-        image_url=image_url,
+        title=data["title"],
+        content=data["content"],
+        image_url=data.get("image_url"),
     )
     db.session.add(announcement)
     db.session.commit()
