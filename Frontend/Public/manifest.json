@@ -1,0 +1,21 @@
+{
+  "name": "Chama Management System",
+  "short_name": "Chama",
+  "description": "A platform for managing chama memberships, contributions, loans and investments.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#123B32",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
