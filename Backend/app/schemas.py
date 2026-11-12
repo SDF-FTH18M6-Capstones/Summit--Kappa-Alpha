@@ -50,16 +50,9 @@ class PenaltySchema(Schema):
     reason = fields.Str(required=True, validate=validate.Length(min=3, max=255, error="Reason must be between 3 and 255 characters."))
     date_applied = fields.Date(required=True)
 class MeetingSchema(Schema):
-    title = fields.Str(
-        required=True,
-        validate=validate.Length(min=3, max=200, error="Meeting title must be between 3 and 200 characters.")
-    )
+    title = fields.Str(required=True, validate=validate.Length(min=3, max=200, error="Meeting title must be between 3 and 200 characters."))
     meeting_date = fields.DateTime(required=True)
-    venue = fields.Str(
-        required=False,
-        allow_none=True,
-        validate=validate.Length(max=150, error="Venue cannot exceed 150 characters.")
-    )
+    venue = fields.Str(required=False, allow_none=True, validate=validate.Length(max=150, error="Venue cannot exceed 150 characters."))
     agenda = fields.Str(required=False, allow_none=True)
 
 
