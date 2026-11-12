@@ -85,8 +85,12 @@ const Join = () => {
               <div className="flex flex-1 items-center gap-5">
 
                 <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-[#123D2B] text-2xl font-bold text-white">
-                  {chama.initials}
-                </div>
+                  {chama.mark ? (
+                   <img src={chama.mark} alt={`${chama.name} logo`} className="h-10 w-10" />
+                     ) : (
+                     chama.initials
+                      )}
+              </div>
 
                 <div>
                   <h3 className="text-xl font-bold text-[#123D2B]">
@@ -155,4 +159,3 @@ const Join = () => {
 };
 
 export default Join;
-
