@@ -26,5 +26,6 @@ def create_app():
     from app import models
     from app.routes.finance import finance_bp
     app.register_blueprint(finance_bp)
-
+    from app.routes.operations import operations_bp
+    app.register_blueprint(operations_bp, url_prefix="/api")
     return app
