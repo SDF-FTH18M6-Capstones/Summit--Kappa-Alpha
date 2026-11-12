@@ -4,52 +4,52 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from app import db
-from app.models import Announcement, Meeting, MeetingMinutes, Membership, User
+from app.models import (
+    Announcement,
+    Meeting,
+    MeetingAttendance,
+    MeetingMinutes,
+    Membership,
+    User,
+)
 
 operations_bp = Blueprint("operations", __name__)
 
 OFFICIAL_ROLES = ("secretary", "chama_admin")
+ATTENDANCE_STATUSES = ("present", "absent", "apology")
+MAX_PER_PAGE = 100
 
-
-# ------------------------------------------------------------------ helpers
 
 def _val(value):
-    """Return the plain string for an enum member or a string column."""
+    """Plain string for an enum member or a string column."""
     return getattr(value, "value", value)
 
 
-def _context():
-    """Resolve the current user and their active membership.
+def _iso(value):
+    return value.isoformat() if value else None
 
-    The chama is the user's only active membership, or the one named by the
-    optional ?chama_id= query parameter. Returns (user, membership, error).
+
+def _access(chama_id, officials_only=False):
+    """Check the caller is an active member of the chama.
+
+    Returns (user, error_response). When officials_only is True the caller
+    must also be a secretary or chama_admin.
     """
     user = db.session.get(User, int(get_jwt_identity()))
     if user is None or not user.is_active:
-        return None, None, (jsonify({"error": "User not found or inactive"}), 401)
+        return None, (jsonify({"error": "User not found or inactive"}), 401)
 
-    query = Membership.query.filter_by(user_id=user.id)
-    chama_id = request.args.get("chama_id", type=int)
-    if chama_id is not None:
-        query = query.filter_by(chama_id=chama_id)
+    membership = Membership.query.filter_by(user_id=user.id, chama_id=chama_id).first()
+    if membership is None or _val(membership.status) != "active":
+        return None, (jsonify({"error": "You are not an active member of this chama"}), 403)
 
-    active = [m for m in query.all() if _val(m.status) == "active"]
-    if not active:
-        return None, None, (
-            jsonify({"error": "You are not an active member of this chama"}),
-            403,
-        )
-    return user, active[0], None
-
-
-def _require_official(user):
-    if _val(user.role) not in OFFICIAL_ROLES:
-        return jsonify({"error": "Only the secretary or chama admin can do this"}), 403
-    return None
+    if officials_only and _val(user.role) not in OFFICIAL_ROLES:
+        return None, (jsonify({"error": "Only the secretary or chama admin can do this"}), 403)
+    return user, None
 
 
 def _parse_datetime(value):
-    """Parse an ISO 8601 string into a naive UTC datetime, or None."""
+    """ISO 8601 string -> naive UTC datetime, or None."""
     if not isinstance(value, str):
         return None
     try:
@@ -62,7 +62,6 @@ def _parse_datetime(value):
 
 
 def _read_text(data, key, errors, max_len=None, required=False):
-    """Read a stripped string field. Records a problem in `errors`."""
     value = data.get(key)
     if value is None or (isinstance(value, str) and not value.strip()):
         if required:
@@ -78,82 +77,86 @@ def _read_text(data, key, errors, max_len=None, required=False):
     return value
 
 
-def _iso(value):
-    return value.isoformat() if value else None
+def _paginate(query, serializer):
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 20, type=int)
+    page = max(page, 1)
+    per_page = min(max(per_page, 1), MAX_PER_PAGE)
+
+    result = query.paginate(page=page, per_page=per_page, error_out=False)
+    return jsonify(
+        {
+            "items": [serializer(item) for item in result.items],
+            "page": result.page,
+            "per_page": result.per_page,
+            "total": result.total,
+            "pages": result.pages,
+        }
+    ), 200
 
 
-def _serialize_minutes(minutes):
-    if minutes is None:
-        return None
+def _serialize_meeting(m):
     return {
-        "id": minutes.id,
-        "meeting_id": minutes.meeting_id,
-        "minutes": minutes.minutes,
-        "file_url": minutes.file_url,
-        "recorded_by": minutes.recorded_by,
-        "created_at": _iso(minutes.created_at),
+        "id": m.id,
+        "chama_id": m.chama_id,
+        "title": m.title,
+        "meeting_date": _iso(m.meeting_date),
+        "venue": m.venue,
+        "agenda": m.agenda,
+        "created_by": m.created_by,
     }
 
 
-def _serialize_meeting(meeting, include_minutes=False):
-    minutes = MeetingMinutes.query.filter_by(meeting_id=meeting.id).first()
+def _serialize_minutes(m):
+    return {
+        "id": m.id,
+        "meeting_id": m.meeting_id,
+        "minutes": m.minutes,
+        "file_url": m.file_url,
+        "recorded_by": m.recorded_by,
+        "created_at": _iso(m.created_at),
+    }
+
+
+def _serialize_attendance(record, membership=None, user=None):
     payload = {
-        "id": meeting.id,
-        "chama_id": meeting.chama_id,
-        "title": meeting.title,
-        "meeting_date": _iso(meeting.meeting_date),
-        "venue": meeting.venue,
-        "agenda": meeting.agenda,
-        "created_by": meeting.created_by,
-        "has_minutes": minutes is not None,
+        "id": record.id,
+        "meeting_id": record.meeting_id,
+        "membership_id": record.membership_id,
+        "status": _val(record.status),
     }
-    if include_minutes:
-        payload["minutes"] = _serialize_minutes(minutes)
+    if membership is not None:
+        payload["member_number"] = membership.member_number
+    if user is not None:
+        payload["full_name"] = user.full_name
     return payload
 
 
-def _serialize_announcement(announcement):
+def _serialize_announcement(a):
     return {
-        "id": announcement.id,
-        "chama_id": announcement.chama_id,
-        "title": announcement.title,
-        "content": announcement.content,
-        "image_url": announcement.image_url,
-        "created_by": announcement.created_by,
-        "created_at": _iso(announcement.created_at),
+        "id": a.id,
+        "chama_id": a.chama_id,
+        "title": a.title,
+        "content": a.content,
+        "image_url": a.image_url,
+        "created_by": a.created_by,
+        "created_at": _iso(a.created_at),
     }
 
 
-def _find_meeting(meeting_id, chama_id):
-    return Meeting.query.filter_by(id=meeting_id, chama_id=chama_id).first()
+def _get_meeting_or_404(meeting_id):
+    meeting = db.session.get(Meeting, meeting_id)
+    if meeting is None:
+        return None, (jsonify({"error": "Meeting not found"}), 404)
+    return meeting, None
 
 
-# ----------------------------------------------------------------- meetings
-
-@operations_bp.route("/meetings", methods=["GET"])
+@operations_bp.route("/chamas/<int:chama_id>/meetings", methods=["POST"])
 @jwt_required()
-def list_meetings():
-    user, membership, error = _context()
+def create_meeting(chama_id):
+    user, error = _access(chama_id, officials_only=True)
     if error:
         return error
-
-    meetings = (
-        Meeting.query.filter_by(chama_id=membership.chama_id)
-        .order_by(Meeting.meeting_date.desc())
-        .all()
-    )
-    return jsonify([_serialize_meeting(m) for m in meetings]), 200
-
-
-@operations_bp.route("/meetings", methods=["POST"])
-@jwt_required()
-def create_meeting():
-    user, membership, error = _context()
-    if error:
-        return error
-    denied = _require_official(user)
-    if denied:
-        return denied
 
     data = request.get_json(silent=True) or {}
     errors = {}
@@ -167,7 +170,7 @@ def create_meeting():
         return jsonify({"errors": errors}), 400
 
     meeting = Meeting(
-        chama_id=membership.chama_id,
+        chama_id=chama_id,
         title=title,
         meeting_date=meeting_date,
         venue=venue,
@@ -176,78 +179,32 @@ def create_meeting():
     )
     db.session.add(meeting)
     db.session.commit()
-    return jsonify(_serialize_meeting(meeting, include_minutes=True)), 201
+    return jsonify(_serialize_meeting(meeting)), 201
 
 
-@operations_bp.route("/meetings/<int:meeting_id>", methods=["GET"])
+@operations_bp.route("/chamas/<int:chama_id>/meetings", methods=["GET"])
 @jwt_required()
-def get_meeting(meeting_id):
-    user, membership, error = _context()
+def list_meetings(chama_id):
+    _, error = _access(chama_id)
     if error:
         return error
 
-    meeting = _find_meeting(meeting_id, membership.chama_id)
-    if meeting is None:
-        return jsonify({"error": "Meeting not found"}), 404
-    return jsonify(_serialize_meeting(meeting, include_minutes=True)), 200
+    query = Meeting.query.filter_by(chama_id=chama_id).order_by(Meeting.meeting_date.desc())
+    return _paginate(query, _serialize_meeting)
 
 
-@operations_bp.route("/meetings/<int:meeting_id>", methods=["PATCH"])
+@operations_bp.route("/meetings/<int:meeting_id>/minutes", methods=["POST"])
 @jwt_required()
-def update_meeting(meeting_id):
-    user, membership, error = _context()
+def create_minutes(meeting_id):
+    meeting, error = _get_meeting_or_404(meeting_id)
     if error:
         return error
-    denied = _require_official(user)
-    if denied:
-        return denied
-
-    meeting = _find_meeting(meeting_id, membership.chama_id)
-    if meeting is None:
-        return jsonify({"error": "Meeting not found"}), 404
-
-    data = request.get_json(silent=True) or {}
-    errors = {}
-
-    for key, max_len, required in (
-        ("title", 200, True),
-        ("venue", 150, False),
-        ("agenda", None, False),
-    ):
-        if key in data:
-            value = _read_text(data, key, errors, max_len, required)
-            if key not in errors:
-                setattr(meeting, key, value)
-
-    if "meeting_date" in data:
-        meeting_date = _parse_datetime(data["meeting_date"])
-        if meeting_date is None:
-            errors["meeting_date"] = "A valid ISO 8601 date and time is required"
-        else:
-            meeting.meeting_date = meeting_date
-
-    if errors:
-        db.session.rollback()
-        return jsonify({"errors": errors}), 400
-
-    db.session.commit()
-    return jsonify(_serialize_meeting(meeting, include_minutes=True)), 200
-
-
-@operations_bp.route("/meetings/<int:meeting_id>/minutes", methods=["PUT"])
-@jwt_required()
-def upsert_minutes(meeting_id):
-    """Create the meeting's minutes, or replace them (one set per meeting)."""
-    user, membership, error = _context()
+    user, error = _access(meeting.chama_id, officials_only=True)
     if error:
         return error
-    denied = _require_official(user)
-    if denied:
-        return denied
 
-    meeting = _find_meeting(meeting_id, membership.chama_id)
-    if meeting is None:
-        return jsonify({"error": "Meeting not found"}), 404
+    if MeetingMinutes.query.filter_by(meeting_id=meeting.id).first() is not None:
+        return jsonify({"error": "Minutes already exist for this meeting"}), 409
 
     data = request.get_json(silent=True) or {}
     errors = {}
@@ -256,51 +213,126 @@ def upsert_minutes(meeting_id):
     if errors:
         return jsonify({"errors": errors}), 400
 
+    minutes = MeetingMinutes(
+        meeting_id=meeting.id,
+        recorded_by=user.id,
+        minutes=text,
+        file_url=file_url,
+    )
+    db.session.add(minutes)
+    db.session.commit()
+    return jsonify(_serialize_minutes(minutes)), 201
+
+
+@operations_bp.route("/meetings/<int:meeting_id>/minutes", methods=["GET"])
+@jwt_required()
+def get_minutes(meeting_id):
+    meeting, error = _get_meeting_or_404(meeting_id)
+    if error:
+        return error
+    _, error = _access(meeting.chama_id)
+    if error:
+        return error
+
     minutes = MeetingMinutes.query.filter_by(meeting_id=meeting.id).first()
-    created = minutes is None
-    if created:
-        minutes = MeetingMinutes(
-            meeting_id=meeting.id,
-            recorded_by=user.id,
-            minutes=text,
-            file_url=file_url,
-        )
-        db.session.add(minutes)
-    else:
-        minutes.minutes = text
-        minutes.file_url = file_url
-        minutes.recorded_by = user.id
+    if minutes is None:
+        return jsonify({"error": "No minutes recorded for this meeting"}), 404
+    return jsonify(_serialize_minutes(minutes)), 200
+
+
+@operations_bp.route("/meetings/<int:meeting_id>/attendance", methods=["POST"])
+@jwt_required()
+def record_attendance(meeting_id):
+    """Record attendance for one member, or many via {"records": [...]}.
+
+    Recording the same member again updates their status (one row per
+    meeting and member).
+    """
+    meeting, error = _get_meeting_or_404(meeting_id)
+    if error:
+        return error
+    _, error = _access(meeting.chama_id, officials_only=True)
+    if error:
+        return error
+
+    data = request.get_json(silent=True) or {}
+    entries = data.get("records") if isinstance(data.get("records"), list) else [data]
+    if not entries:
+        return jsonify({"error": "No attendance records supplied"}), 400
+
+    errors = {}
+    cleaned = []
+    for index, entry in enumerate(entries):
+        problems = {}
+        entry = entry if isinstance(entry, dict) else {}
+        membership_id = entry.get("membership_id")
+        status = entry.get("status")
+
+        if not isinstance(membership_id, int) or isinstance(membership_id, bool):
+            problems["membership_id"] = "membership_id must be an integer"
+        else:
+            membership = db.session.get(Membership, membership_id)
+            if membership is None or membership.chama_id != meeting.chama_id:
+                problems["membership_id"] = "Member does not belong to this chama"
+
+        if status not in ATTENDANCE_STATUSES:
+            problems["status"] = f"status must be one of: {', '.join(ATTENDANCE_STATUSES)}"
+
+        if problems:
+            errors[str(index)] = problems
+        else:
+            cleaned.append((membership_id, status))
+
+    if errors:
+        return jsonify({"errors": errors}), 400
+
+    saved = []
+    for membership_id, status in cleaned:
+        record = MeetingAttendance.query.filter_by(
+            meeting_id=meeting.id, membership_id=membership_id
+        ).first()
+        if record is None:
+            record = MeetingAttendance(
+                meeting_id=meeting.id, membership_id=membership_id, status=status
+            )
+            db.session.add(record)
+        else:
+            record.status = status
+        saved.append(record)
 
     db.session.commit()
-    return jsonify(_serialize_minutes(minutes)), 201 if created else 200
+    return jsonify({"items": [_serialize_attendance(r) for r in saved]}), 201
 
 
-# ------------------------------------------------------------ announcements
-
-@operations_bp.route("/announcements", methods=["GET"])
+@operations_bp.route("/meetings/<int:meeting_id>/attendance", methods=["GET"])
 @jwt_required()
-def list_announcements():
-    user, membership, error = _context()
+def get_attendance(meeting_id):
+    meeting, error = _get_meeting_or_404(meeting_id)
+    if error:
+        return error
+    _, error = _access(meeting.chama_id)
     if error:
         return error
 
-    announcements = (
-        Announcement.query.filter_by(chama_id=membership.chama_id)
-        .order_by(Announcement.created_at.desc())
+    rows = (
+        db.session.query(MeetingAttendance, Membership, User)
+        .join(Membership, MeetingAttendance.membership_id == Membership.id)
+        .join(User, Membership.user_id == User.id)
+        .filter(MeetingAttendance.meeting_id == meeting.id)
+        .order_by(Membership.member_number)
         .all()
     )
-    return jsonify([_serialize_announcement(a) for a in announcements]), 200
+    return jsonify(
+        {"items": [_serialize_attendance(rec, mem, usr) for rec, mem, usr in rows]}
+    ), 200
 
 
-@operations_bp.route("/announcements", methods=["POST"])
+@operations_bp.route("/chamas/<int:chama_id>/announcements", methods=["POST"])
 @jwt_required()
-def create_announcement():
-    user, membership, error = _context()
+def create_announcement(chama_id):
+    user, error = _access(chama_id, officials_only=True)
     if error:
         return error
-    denied = _require_official(user)
-    if denied:
-        return denied
 
     data = request.get_json(silent=True) or {}
     errors = {}
@@ -311,7 +343,7 @@ def create_announcement():
         return jsonify({"errors": errors}), 400
 
     announcement = Announcement(
-        chama_id=membership.chama_id,
+        chama_id=chama_id,
         created_by=user.id,
         title=title,
         content=content,
@@ -320,3 +352,16 @@ def create_announcement():
     db.session.add(announcement)
     db.session.commit()
     return jsonify(_serialize_announcement(announcement)), 201
+
+
+@operations_bp.route("/chamas/<int:chama_id>/announcements", methods=["GET"])
+@jwt_required()
+def list_announcements(chama_id):
+    _, error = _access(chama_id)
+    if error:
+        return error
+
+    query = Announcement.query.filter_by(chama_id=chama_id).order_by(
+        Announcement.created_at.desc()
+    )
+    return _paginate(query, _serialize_announcement)
