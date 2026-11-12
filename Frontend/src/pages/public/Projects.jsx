@@ -4,19 +4,19 @@ const projects = [
     title: "Land Investment",
     description: "Collective investment in land and property development.",
     status: "Ongoing",
-    icon: ""
+    icon: "Public/Icons/Land_Investment.jpg"
   },
   {
     title: "Agricultural Investment",
     description: "Supporting agricultural activities and farming opportunities.",
     status: "Ongoing",
-    icon: ""
+    icon: "Public/Icons/Agricultural_Investment.jpg"
   },
   {
     title: "Community Development",
     description: "Investing in initiatives that improve our community.",
     status: "Planned",
-    icon: ""
+    icon: "Public/Icons/Community_Development.webp"
   }
 ];
 
@@ -43,9 +43,13 @@ function Projects() {
               key={index}
               className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100"
             >
-              <div className="bg-green-100 h-44 flex items-center justify-center">
+              <div className="h-48 flex items-center justify-center">
                 <span className="text-7xl">
-                  {project.icon}
+                  <img
+                  src={project.icon}
+                  alt={project.title}
+                  className="w-60 h-80 object-contain rounded-2xl"
+                  />
                 </span>
               </div>
 

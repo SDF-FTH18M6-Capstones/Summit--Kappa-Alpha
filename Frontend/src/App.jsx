@@ -9,6 +9,7 @@ import Officials from "./pages/public/Officials";
 import Join from "./pages/public/Join";
 import Register from "./pages/auth/Register";
 import Login from "./pages/auth/Login";
+import Projects from "./pages/public/Projects";
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
         <Route path="/chamas" element={<Join />} />
         <Route path="/register" element={<Register />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/projects" element={<Projects />} />
       </Route>
     </Routes>
   );
