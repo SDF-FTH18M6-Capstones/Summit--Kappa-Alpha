@@ -63,7 +63,7 @@ const Home = () => {
 
           <div className="overflow-hidden rounded-2xl shadow-lg">
             <img
-              src=""
+              src="/Public/Images/hero-image.jpg"
               alt="Community members coming together"
               className="h-[350px] w-full object-cover md:h-[470px]"
             />
