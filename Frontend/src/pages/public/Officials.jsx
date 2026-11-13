@@ -72,7 +72,7 @@ const Officials = () => {
 
         </div>
 
-        {/* Constitution */}
+        /* Constitution */
         <div className="mt-16 rounded-xl bg-[#F3F5F3] p-8 text-center">
 
           <h2 className="text-2xl font-bold text-[#123D2B]">

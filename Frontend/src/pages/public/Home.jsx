@@ -46,7 +46,7 @@ const Home = () => {
 
             <div className="mt-8 flex flex-wrap gap-4">
               <Link
-                to="/register"
+                to="/signup-choice"
                 className="rounded-lg bg-[#123D2B] px-7 py-3.5 font-semibold text-white shadow-sm transition hover:bg-[#1F6B49]"
               >
                 Create account
@@ -63,7 +63,7 @@ const Home = () => {
 
           <div className="overflow-hidden rounded-2xl shadow-lg">
             <img
-              src=""
+              src="/Public/Images/hero-image.jpg"
               alt="Community members coming together"
               className="h-[350px] w-full object-cover md:h-[470px]"
             />

@@ -6,6 +6,7 @@ const navigation = [
   { name: "About", path: "/about" },
   { name: "Officials", path: "/officials" },
   { name: "Chamas", path: "/chamas" },
+  { name: "Projects", path: "/projects" },
   { name: "How to Join", path: "/#how-to-join" },
 ];
 
@@ -21,8 +22,12 @@ export default function PublicLayout() {
     <div className="min-h-screen bg-white text-gray-800">
       <header className="sticky top-0 z-50 border-b border-gray-200 bg-white shadow-sm">
         <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <Link to="/" className="text-2xl font-bold text-green-900">
-            Summit
+          <Link to="/" className="flex items-center">
+            <img
+              src="/Public/summit-logo.jpeg"
+              alt="Summit"
+              className="h-12 w-auto object-contain"
+            />
           </Link>
 
           <div className="hidden items-center gap-7 md:flex">
@@ -56,7 +61,7 @@ export default function PublicLayout() {
               Login
             </Link>
             <Link
-              to="/register"
+              to="/signup-choice"
               className="rounded-lg bg-green-800 px-4 py-2 text-sm font-semibold text-white hover:bg-green-900"
             >
               Create Account
@@ -85,6 +90,7 @@ export default function PublicLayout() {
               <Link to="/">Home</Link>
               <Link to="/about">About</Link>
               <Link to="/officials">Officials</Link>
+              <Link to="/projects">Projects</Link>
               <Link to="/chamas">Chamas</Link>
             </div>
           </div>
