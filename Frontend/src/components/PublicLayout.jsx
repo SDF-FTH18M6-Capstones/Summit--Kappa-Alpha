@@ -61,7 +61,7 @@ export default function PublicLayout() {
               Login
             </Link>
             <Link
-              to="/register"
+              to="/signup-choice"
               className="rounded-lg bg-green-800 px-4 py-2 text-sm font-semibold text-white hover:bg-green-900"
             >
               Create Account

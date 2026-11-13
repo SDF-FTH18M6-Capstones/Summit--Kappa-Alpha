@@ -145,7 +145,7 @@ const Join = () => {
           </p>
 
           <Link
-            to="/register"
+            to="/signup-choice"
             className="mt-6 inline-block rounded-lg bg-[#123D2B] px-8 py-3 font-semibold text-white hover:bg-[#1F6B49]"
           >
             Create account

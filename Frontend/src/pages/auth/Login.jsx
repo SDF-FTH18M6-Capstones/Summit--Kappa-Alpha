@@ -1,5 +1,6 @@
 
 import { useState } from "react";
+import { useAuth } from "../../context/AuthContext";
 import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 
@@ -15,6 +16,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
 
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -28,34 +30,42 @@ export default function Login() {
   };
 
   const handleSubmit = async (event) => {
-    event.preventDefault();
-    setError("");
+  event.preventDefault();
+  setError("");
 
-    if (!formData.email.trim() || !formData.password) {
-      setError("Please enter your email and password.");
-      return;
+  if (!formData.email.trim() || !formData.password) {
+    setError("Please enter your email and password.");
+    return;
+  }
+
+  try {
+    setLoading(true);
+
+    // Connect to the login function in AuthContext.
+    const result = await login(
+      formData.email,
+      formData.password
+    );
+
+    if (!result.success) {
+      throw new Error(result.message);
     }
 
-    try {
-      setLoading(true);
+    // Check the user information returned by the backend.
+    console.log("Logged in user:", result.user);
+    console.log("User role:", result.user?.role);
 
-      // Connect your backend login API here.
+    // Navigate to the dashboard after successful login.
+    navigate("/dashboard", { replace: true });
 
-      console.log("Login details:", formData);
-      console.log("Remember me:", rememberMe);
-
-      // Navigate only after successful authentication.
-      // navigate("/dashboard");
-
-    } catch (err) {
-      setError(
-        err.message || "Unable to login. Please try again."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  } catch (err) {
+    setError(
+      err.message || "Unable to login. Please try again."
+    );
+  } finally {
+    setLoading(false);
+  }
+};
   const inputClass =
     "w-full rounded-lg border border-gray-300 bg-white py-3 pl-11 pr-4 text-gray-800 outline-none transition focus:border-green-800 focus:ring-2 focus:ring-green-100";
 
@@ -106,7 +116,6 @@ export default function Login() {
 
         </div>
 
-        {/* RIGHT SIDE */}
         <div className="flex flex-col justify-center p-8 md:p-12">
 
           <div className="mb-8">
@@ -126,8 +135,6 @@ export default function Login() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
-
-            {/* EMAIL */}
             <div>
 
               <label className="mb-2 block text-sm font-semibold text-gray-700">
@@ -156,7 +163,6 @@ export default function Login() {
 
             </div>
 
-            {/* PASSWORD */}
             <div>
 
               <label className="mb-2 block text-sm font-semibold text-gray-700">
@@ -196,10 +202,8 @@ export default function Login() {
                 </button>
 
               </div>
-
             </div>
 
-            {/* ERROR MESSAGE */}
             {error && (
               <div
                 role="alert"
@@ -209,7 +213,6 @@ export default function Login() {
               </div>
             )}
 
-            {/* REMEMBER ME AND FORGOT PASSWORD */}
             <div className="flex flex-wrap items-center justify-between gap-3">
 
               <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-600">
@@ -220,9 +223,7 @@ export default function Login() {
                   onChange={(event) => setRememberMe(event.target.checked)}
                   className="h-4 w-4 accent-green-800"
                 />
-
                 Remember me
-
               </label>
 
               <Link
@@ -234,7 +235,6 @@ export default function Login() {
 
             </div>
 
-            {/* LOGIN BUTTON */}
             <button
               type="submit"
               disabled={loading}
@@ -245,13 +245,11 @@ export default function Login() {
 
           </form>
 
-          {/* REGISTER LINK */}
           <p className="mt-8 text-center text-sm text-gray-600">
-
             Don't have an account?{" "}
 
             <Link
-              to="/register"
+              to="/signup-choice"
               className="font-semibold text-green-800 hover:underline"
             >
               Create Account
