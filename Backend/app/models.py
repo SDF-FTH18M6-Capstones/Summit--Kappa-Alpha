@@ -40,6 +40,7 @@ class EmailVerificationToken(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     expires_at = db.Column(db.DateTime, nullable=False)   
+    used_at = db.Column(db.DateTime, nullable=True)
 
     def to_dict(self):
         return {
@@ -119,16 +120,26 @@ class JoinRequest(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     chama_id = db.Column(db.Integer, db.ForeignKey('chamas.id'), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    full_name = db.Column(db.String(150), nullable=False)
+    email = db.Column(db.String(254), nullable=False)
+    phone_number = db.Column(db.String(20), nullable=False)
+    message = db.Column(db.Text, nullable=True)
     status = db.Column(db.String(50), default='pending', nullable=False)
+    reviewed_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    reviewed_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
     def to_dict(self):
         return {
             'id': self.id,
             'chama_id': self.chama_id,
-            'user_id': self.user_id,
+            'full_name': self.full_name,
+            'email': self.email,
+            'phone_number': self.phone_number,
+            'message': self.message,
             'status': self.status,
+            'reviewed_by': self.reviewed_by,
+            'reviewed_at': self.reviewed_at.isoformat() if self.reviewed_at else None,
             'created_at': self.created_at.isoformat()
         }
 
@@ -141,8 +152,8 @@ class ContributionType(db.Model):
     amount = db.Column(db.Numeric(12, 2), nullable=False)
     frequency = db.Column(db.String(50), nullable=False)
     due_day = db.Column(db.SmallInteger, nullable=True)
-    grace_days = db.Column(db.SmallInteger, nullable=True)
-    penalty_amount = db.Column(db.Numeric(12, 2), nullable=True)
+    grace_days = db.Column(db.SmallInteger, nullable=True, default=0)
+    penalty_amount = db.Column(db.Numeric(12, 2), nullable=True, default=0.0)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
 
 # relationships
@@ -333,7 +344,7 @@ class LoanRepayment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     loan_id = db.Column(db.Integer, db.ForeignKey('loans.id'), nullable=False)
     amount = db.Column(db.Numeric(12, 2), nullable=False)
-    mpesa_code = db.Column(db.String(20), nullable=False)
+    mpesa_code = db.Column(db.String(20), unique=True, nullable=False)
     paid_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     recorded_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
 
@@ -379,9 +390,9 @@ class Project(db.Model):
     title = db.Column(db.String(200), nullable=False)
     description = db.Column(db.Text, nullable=True)
     amount_invested = db.Column(db.Numeric(14, 2), nullable=False, default=0.0)
-    status = db.Column(db.String(50), default='planning', nullable=False) # planning, active, completed
+    status = db.Column(db.String(50), default='planned', nullable=False) # planned, ongoing, completed
     image_url = db.Column(db.String(500), nullable=True)
-    is_public = db.Column(db.Boolean, default=False, nullable=False)
+    is_public = db.Column(db.Boolean, default=True, nullable=False)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
