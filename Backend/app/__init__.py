@@ -30,11 +30,13 @@ def create_app():
     # Import Models so Flask-Migrate detects all 17 tables
     from app import models  # noqa: F401
 
-    # Register Sprint 2 Blueprints
+    # Register Sprint 2 & Sprint 3 Blueprints
+    from app.routes.auth import auth_bp
     from app.routes.chamas import chamas_bp
     from app.routes.finance import finance_bp
     from app.routes.operations import operations_bp
 
+    app.register_blueprint(auth_bp)                           # Already has url_prefix="/api/auth"
     app.register_blueprint(chamas_bp)                         # Already has url_prefix="/api"
     app.register_blueprint(finance_bp)                        # Routes already start with "/api/..."
     app.register_blueprint(operations_bp, url_prefix="/api")  # Adds "/api" prefix to operations routes
