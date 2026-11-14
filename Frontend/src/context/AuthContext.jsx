@@ -1,82 +1,46 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
-import { tokenStore, userStore } from "../api/axiosClient";
-
-const AuthContext = createContext(null);
-
-export function AuthProvider({ children }) {
-  // Read from localStorage once, so the user stays logged in after a refresh.
-  const [user, setUser] = useState(() => (tokenStore.get() ? userStore.get() : null));
-
-  // Call this after a successful login API response.
-  const login = useCallback(({ token, user: loggedInUser }) => {
-    tokenStore.set(token);
-    userStore.set(loggedInUser);
-    setUser(loggedInUser);
-  }, []);
-
-  const logout = useCallback(() => {
-    tokenStore.clear();
-    userStore.clear();
-    setUser(null);
-  }, []);
-
-  const value = useMemo(
-    () => ({
-      user,
-      isAuthenticated: Boolean(user),
-      login,
-      logout,
-      hasRole: (roles) => !roles?.length || roles.includes(user?.role),
-    }),
-    [user, login, logout]
-  );
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error("useAuth must be used inside <AuthProvider>");
-  return context;
-}
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 
 import { useNavigate } from "react-router-dom";
+import { tokenStore, userStore } from "../api/axiosClient";
 
-// Create the authentication context
 const AuthContext = createContext(null);
 
 // Backend URL
-const API_URL =
-  import.meta.env.VITE_API_URL || "";
+const API_URL = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 
-// Authentication provider
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() =>
+    tokenStore.get() ? userStore.get() : null
+  );
+
   const [loading, setLoading] = useState(true);
 
   const navigate = useNavigate();
 
-  // Check whether a user is already logged in
+  // Check authentication when the application loads
   useEffect(() => {
+    let isMounted = true;
+
     const checkAuth = async () => {
-      const token = localStorage.getItem("token");
+      const token = tokenStore.get();
 
       if (!token) {
-        setLoading(false);
+        if (isMounted) {
+          setUser(null);
+          setLoading(false);
+        }
         return;
       }
 
       try {
-        // BACKEND CONNECTION:
-        // GET /api/auth/me
-        // This endpoint should return the currently logged-in user.
         const response = await fetch(`${API_URL}/auth/me`, {
           method: "GET",
           headers: {
@@ -86,31 +50,42 @@ export function AuthProvider({ children }) {
         });
 
         if (!response.ok) {
-          throw new Error("Authentication expired");
+          throw new Error("Authentication expired. Please log in again.");
         }
 
         const data = await response.json();
+        const currentUser = data.user ?? data;
 
-        // Support either { user: {...} } or a direct user object.
-        setUser(data.user ?? data);
+        if (isMounted) {
+          userStore.set(currentUser);
+          setUser(currentUser);
+        }
       } catch (error) {
         console.error("Authentication check failed:", error);
 
-        localStorage.removeItem("token");
-        setUser(null);
+        tokenStore.clear();
+        userStore.clear();
+
+        if (isMounted) {
+          setUser(null);
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
     checkAuth();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  // Login function
-  const login = async (email, password) => {
+  // Login
+  const login = useCallback(async (email, password) => {
     try {
-      // BACKEND CONNECTION:
-      // POST /api/auth/login
       const response = await fetch(`${API_URL}/auth/login`, {
         method: "POST",
         headers: {
@@ -130,20 +105,18 @@ export function AuthProvider({ children }) {
         );
       }
 
-      // Save the JWT token.
-      // Adjust this field if your Flask response uses another name.
-      const token =
-        data.access_token ||
-        data.token;
+      // Accept either access_token or token
+      const token = data.access_token || data.token;
 
       if (!token) {
-        throw new Error("No authentication token was returned.");
+        throw new Error("No authentication token returned by the server.");
       }
 
-      localStorage.setItem("token", token);
-
-      // Save the logged-in user.
       const loggedInUser = data.user ?? data;
+
+      // Save authentication details
+      tokenStore.set(token);
+      userStore.set(loggedInUser);
 
       setUser(loggedInUser);
 
@@ -157,16 +130,13 @@ export function AuthProvider({ children }) {
         message: error.message,
       };
     }
-  };
+  }, []);
 
-  // Logout function
-  const logout = async () => {
-    const token = localStorage.getItem("token");
+  // Logout
+  const logout = useCallback(async () => {
+    const token = tokenStore.get();
 
     try {
-      // BACKEND CONNECTION:
-      // POST /api/auth/logout
-      // This is optional if your backend does not have a logout endpoint.
       if (token) {
         await fetch(`${API_URL}/auth/logout`, {
           method: "POST",
@@ -178,21 +148,38 @@ export function AuthProvider({ children }) {
     } catch (error) {
       console.error("Logout request failed:", error);
     } finally {
-      localStorage.removeItem("token");
+      tokenStore.clear();
+      userStore.clear();
+
       setUser(null);
+
       navigate("/login", { replace: true });
     }
-  };
+  }, [navigate]);
 
-  // Share authentication information with the application.
-  const value = {
-    user,
-    setUser,
-    loading,
-    login,
-    logout,
-    isAuthenticated: Boolean(user),
-  };
+  // Check user roles
+  const hasRole = useCallback(
+    (roles) => {
+      if (!roles?.length) return true;
+
+      return roles.includes(user?.role);
+    },
+    [user]
+  );
+
+  // Share authentication data with the application
+  const value = useMemo(
+    () => ({
+      user,
+      setUser,
+      loading,
+      login,
+      logout,
+      isAuthenticated: Boolean(user),
+      hasRole,
+    }),
+    [user, loading, login, logout, hasRole]
+  );
 
   return (
     <AuthContext.Provider value={value}>
@@ -201,7 +188,7 @@ export function AuthProvider({ children }) {
   );
 }
 
-// Custom hook for accessing authentication
+// Custom authentication hook
 export function useAuth() {
   const context = useContext(AuthContext);
 

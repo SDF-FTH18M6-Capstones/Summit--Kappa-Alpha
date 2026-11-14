@@ -29,3 +29,4 @@ export default function ProtectedRoute({ allowedRoles, children }) {
 
   return children || <Outlet />;
 }
+
