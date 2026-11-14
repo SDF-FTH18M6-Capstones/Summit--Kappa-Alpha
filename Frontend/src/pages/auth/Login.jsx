@@ -2,7 +2,13 @@
 import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { Link, useNavigate } from "react-router-dom";
-import { Eye, EyeOff, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  LockKeyhole,
+  Mail,
+  ShieldCheck,
+} from "lucide-react";
 
 export default function Login() {
   const [formData, setFormData] = useState({
@@ -30,54 +36,33 @@ export default function Login() {
   };
 
   const handleSubmit = async (event) => {
-  event.preventDefault();
-  setError("");
+    event.preventDefault();
 
-  if (!formData.email.trim() || !formData.password) {
-    setError("Please enter your email and password.");
-    return;
-  }
-
-  try {
+    setError("");
     setLoading(true);
 
-    // Connect to the login function in AuthContext.
-    const result = await login(
-      formData.email,
-      formData.password
-    );
+    try {
+      await login(formData.email, formData.password);
 
-    if (!result.success) {
-      throw new Error(result.message);
+      navigate("/dashboard", { replace: true });
+    } catch (error) {
+      console.error("Login error:", error);
+      setError(error.message || "Login failed. Please try again.");
+    } finally {
+      setLoading(false);
     }
+  };
 
-    // Check the user information returned by the backend.
-    console.log("Logged in user:", result.user);
-    console.log("User role:", result.user?.role);
-
-    // Navigate to the dashboard after successful login.
-    navigate("/dashboard", { replace: true });
-
-  } catch (err) {
-    setError(
-      err.message || "Unable to login. Please try again."
-    );
-  } finally {
-    setLoading(false);
-  }
-};
   const inputClass =
-    "w-full rounded-lg border border-gray-300 bg-white py-3 pl-11 pr-4 text-gray-800 outline-none transition focus:border-green-800 focus:ring-2 focus:ring-green-100";
+    "w-full rounded-lg border border-gray-300 bg-white py-3 pl-11 pr-4 text-gray-800 outline-none transition focus:border-green-800 focus:ring-2 focus:ring-green-100 disabled:bg-gray-100";
 
   return (
     <section className="flex min-h-screen items-center justify-center bg-gray-100 px-4 py-10">
-
       <div className="grid w-full max-w-5xl overflow-hidden rounded-2xl bg-white shadow-xl md:grid-cols-2">
 
+        {/* Welcome section */}
         <div className="relative flex flex-col justify-center overflow-hidden bg-green-950 p-8 text-white md:p-12">
-
           <div className="relative z-10">
-
             <p className="mb-6 text-sm font-semibold uppercase tracking-widest text-green-300">
               Summit Chama
             </p>
@@ -94,7 +79,6 @@ export default function Login() {
             </p>
 
             <div className="mt-10 rounded-xl border border-green-800 bg-green-900/70 p-6">
-
               <ShieldCheck size={30} className="mb-4 text-green-300" />
 
               <p className="text-lg font-semibold">
@@ -105,21 +89,16 @@ export default function Login() {
                 Saving together, supporting each other,
                 and building a better financial future.
               </p>
-
             </div>
-
           </div>
 
           <div className="absolute -bottom-20 -right-20 h-64 w-64 rounded-full bg-green-800/30" />
-
           <div className="absolute -top-20 -left-20 h-52 w-52 rounded-full bg-green-800/20" />
-
         </div>
 
+        {/* Login form */}
         <div className="flex flex-col justify-center p-8 md:p-12">
-
           <div className="mb-8">
-
             <p className="font-semibold tracking-wider text-green-800">
               MEMBER PORTAL
             </p>
@@ -131,24 +110,27 @@ export default function Login() {
             <p className="mt-2 text-gray-500">
               Enter your details to access your account.
             </p>
-
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
 
-              <label className="mb-2 block text-sm font-semibold text-gray-700">
+            {/* Email */}
+            <div>
+              <label
+                htmlFor="email"
+                className="mb-2 block text-sm font-semibold text-gray-700"
+              >
                 Email Address
               </label>
 
               <div className="relative">
-
                 <Mail
                   size={19}
                   className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
                 />
 
                 <input
+                  id="email"
                   type="email"
                   name="email"
                   value={formData.email}
@@ -156,27 +138,29 @@ export default function Login() {
                   placeholder="Enter your email"
                   className={inputClass}
                   autoComplete="email"
+                  disabled={loading}
                   required
                 />
-
               </div>
-
             </div>
 
+            {/* Password */}
             <div>
-
-              <label className="mb-2 block text-sm font-semibold text-gray-700">
+              <label
+                htmlFor="password"
+                className="mb-2 block text-sm font-semibold text-gray-700"
+              >
                 Password
               </label>
 
               <div className="relative">
-
                 <LockKeyhole
                   size={19}
                   className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
                 />
 
                 <input
+                  id="password"
                   type={showPassword ? "text" : "password"}
                   name="password"
                   value={formData.password}
@@ -184,6 +168,7 @@ export default function Login() {
                   placeholder="Enter your password"
                   className={`${inputClass} pr-12`}
                   autoComplete="current-password"
+                  disabled={loading}
                   required
                 />
 
@@ -191,7 +176,9 @@ export default function Login() {
                   type="button"
                   onClick={() => setShowPassword((previous) => !previous)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 transition hover:text-green-800"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-label={
+                    showPassword ? "Hide password" : "Show password"
+                  }
                   aria-pressed={showPassword}
                 >
                   {showPassword ? (
@@ -200,10 +187,10 @@ export default function Login() {
                     <Eye size={20} />
                   )}
                 </button>
-
               </div>
             </div>
 
+            {/* Error message */}
             {error && (
               <div
                 role="alert"
@@ -213,14 +200,16 @@ export default function Login() {
               </div>
             )}
 
+            {/* Remember me and forgot password */}
             <div className="flex flex-wrap items-center justify-between gap-3">
-
               <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-600">
-
                 <input
                   type="checkbox"
                   checked={rememberMe}
-                  onChange={(event) => setRememberMe(event.target.checked)}
+                  onChange={(event) =>
+                    setRememberMe(event.target.checked)
+                  }
+                  disabled={loading}
                   className="h-4 w-4 accent-green-800"
                 />
                 Remember me
@@ -232,9 +221,9 @@ export default function Login() {
               >
                 Forgot Password?
               </Link>
-
             </div>
 
+            {/* Submit */}
             <button
               type="submit"
               disabled={loading}
@@ -242,29 +231,21 @@ export default function Login() {
             >
               {loading ? "Logging in..." : "Login to Account"}
             </button>
-
           </form>
 
           <p className="mt-8 text-center text-sm text-gray-600">
             Don't have an account?{" "}
-
             <Link
               to="/signup-choice"
               className="font-semibold text-green-800 hover:underline"
             >
               Create Account
             </Link>
-
           </p>
-
         </div>
-
       </div>
-
     </section>
   );
 }
-
-
 
 

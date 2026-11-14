@@ -15,28 +15,28 @@ import {
   ShieldCheck,
   History,
   Receipt,
-  Bell
+  Bell,
 } from "lucide-react";
 
 import { useAuth } from "../context/AuthContext";
 
 const navigationByRole = {
-  super_admin: [
+  superadmin: [
     { name: "Overview", path: "/dashboard", icon: LayoutDashboard },
     { name: "Administrators", path: "/dashboard/administrators", icon: ShieldCheck },
     { name: "Organizations", path: "/dashboard/organizations", icon: Building2 },
     { name: "Users", path: "/dashboard/users", icon: Users },
     { name: "Reports", path: "/dashboard/reports", icon: FileText },
-    { name: "Audit logs", path: "/dashboard/audit-logs", icon: History },
+    { name: "Audit Logs", path: "/dashboard/audit-logs", icon: History },
     { name: "Settings", path: "/dashboard/settings", icon: Settings },
   ],
 
-  admin: [
+  chama_admin: [
     { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
-    { name: "Join requests", path: "/dashboard/join-requests", icon: ClipboardList },
+    { name: "Join Requests", path: "/dashboard/join-requests", icon: ClipboardList },
     { name: "Members", path: "/dashboard/members", icon: Users },
     { name: "Officials", path: "/dashboard/officials", icon: ShieldCheck },
-    { name: "Chama rules", path: "/dashboard/chama-rules", icon: Settings },
+    { name: "Chama Rules", path: "/dashboard/chama-rules", icon: Settings },
     { name: "Reports", path: "/dashboard/reports", icon: FileText },
   ],
 
@@ -54,7 +54,7 @@ const navigationByRole = {
     { name: "Meetings", path: "/dashboard/meetings", icon: CalendarDays },
     { name: "Minutes", path: "/dashboard/minutes", icon: BookOpen },
     { name: "Announcements", path: "/dashboard/announcements", icon: Megaphone },
-    { name: "Member register", path: "/dashboard/member-register", icon: Users },
+    { name: "Member Register", path: "/dashboard/member-register", icon: Users },
   ],
 
   member: [
@@ -82,7 +82,7 @@ export default function Sidebar() {
     .replace(/[\s-]+/g, "_");
 
   const navigation =
-    navigationByRole[role] || navigationByRole.member;
+    navigationByRole[role] || [];
 
   return (
     <aside className="flex min-h-screen w-64 shrink-0 flex-col bg-green-950 text-white">
@@ -103,7 +103,6 @@ export default function Sidebar() {
           </div>
         </div>
       </div>
-
 
       <div className="border-b border-green-900 px-6 py-5">
         <p className="text-xs uppercase tracking-wider text-green-400">
@@ -148,4 +147,5 @@ export default function Sidebar() {
     </aside>
   );
 }
+
 

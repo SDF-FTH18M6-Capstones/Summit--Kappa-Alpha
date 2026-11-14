@@ -16,7 +16,8 @@ import {
   ActionButton,
 } from "./DashboardShared";
 
-// DEMO DATA: Replace with Flask API data later.
+// BACKEND NEEDED:
+// GET /api/contributions
 const initialTransactions = [
   {
     id: 1,
@@ -36,6 +37,8 @@ const initialTransactions = [
   },
 ];
 
+// BACKEND NEEDED:
+// GET /api/loans?status=requested
 const initialLoanRequests = [
   {
     id: 1,
@@ -53,7 +56,10 @@ const initialLoanRequests = [
   },
 ];
 
-const defaulters = [
+// BACKEND NEEDED:
+// GET /api/penalties?status=unpaid
+// Or a dedicated endpoint that calculates overdue contributions
+const initialDefaulters = [
   {
     id: 1,
     member: "Brian Mwangi",
@@ -74,6 +80,8 @@ const defaulters = [
   },
 ];
 
+// BACKEND NEEDED:
+// GET /api/memberships?status=active
 const members = [
   { id: 1, name: "Jane Wanjiku" },
   { id: 2, name: "Peter Kamau" },
@@ -85,8 +93,20 @@ const members = [
   { id: 8, name: "Kevin Otieno" },
 ];
 
+const getToday = () => new Date().toISOString().slice(0, 10);
+
 const formatCurrency = (amount) =>
   `KES ${Number(amount).toLocaleString("en-KE")}`;
+
+const formatDate = (date) => {
+  if (!date) return "—";
+
+  return new Date(`${date}T00:00:00`).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
 
 export default function TreasurerDashboard() {
   const [transactions, setTransactions] = useState(
@@ -101,14 +121,13 @@ export default function TreasurerDashboard() {
     member: "",
     mpesaCode: "",
     amount: "",
-    date: "2026-11-13",
+    date: getToday(),
     purpose: "Monthly contribution",
   });
 
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  // Handle changes in the contribution form.
   const handleContributionChange = (event) => {
     const { name, value } = event.target;
 
@@ -121,7 +140,6 @@ export default function TreasurerDashboard() {
     setSuccess("");
   };
 
-  // Record an M-Pesa payment.
   const recordContribution = (event) => {
     event.preventDefault();
 
@@ -144,7 +162,7 @@ export default function TreasurerDashboard() {
       return;
     }
 
-    // Prevent duplicate M-Pesa transaction codes.
+    // Prevent duplicate codes in the current demo data.
     const duplicate = transactions.some(
       (transaction) =>
         transaction.mpesaCode.toUpperCase() === code
@@ -170,22 +188,18 @@ export default function TreasurerDashboard() {
     }
 
     // BACKEND CONNECTION:
+    //
+    // For a monthly contribution:
     // POST /api/contributions
-    // Send member_id, mpesa_code, amount, date and purpose.
-    // The Flask backend must also check duplicate M-Pesa codes.
+
+    // POST /api/loan-repayments
 
     const newTransaction = {
       id: Date.now(),
       member: member.name,
       mpesaCode: code,
       amount,
-      date: new Date(
-        `${contribution.date}T00:00:00`
-      ).toLocaleDateString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }),
+      date: formatDate(contribution.date),
       purpose: contribution.purpose,
     };
 
@@ -198,37 +212,61 @@ export default function TreasurerDashboard() {
       member: "",
       mpesaCode: "",
       amount: "",
-      date: "2026-11-13",
+      date: getToday(),
       purpose: "Monthly contribution",
     });
 
     setSuccess("M-Pesa payment recorded successfully (demo).");
   };
 
-  // Approve or reject a loan request.
-  const handleLoanRequest = (id, decision) => {
+ const handleLoanRequest = (id, decision) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to ${decision} this loan request?`
+    );
+
+    if (!confirmed) return;
+
+    const selectedLoan = loanRequests.find(
+      (request) => request.id === id
+    );
+
+    if (!selectedLoan) {
+      setError("Loan request could not be found.");
+      return;
+    }
+
     // BACKEND CONNECTION:
+    //
     // PATCH /api/loans/${id}
-    // Send { status: decision } to Flask.
 
     setLoanRequests((current) =>
       current.filter((request) => request.id !== id)
     );
 
-    setSuccess(`Loan request ${decision} (demo).`);
     setError("");
+
+    setSuccess(
+      `Loan request ${decision} successfully (demo).`
+    );
   };
 
-  // Calculate total recorded transactions for this demo.
   const totalContributions = transactions.reduce(
     (total, transaction) => total + transaction.amount,
     0
   );
 
+  // GET /api/contributions/summary
+  // GET /api/loans/summary
+  // GET /api/penalties/summary
+  // GET /api/loans?status=requested
+
+  const outstandingLoans = 85000;
+
+  const defaulters = initialDefaulters;
+
   return (
     <div className="space-y-7">
 
-      {/* DASHBOARD HEADING */}
       <div>
         <p className="text-sm font-semibold text-green-800">
           SUMMIT CHAMA / FINANCIAL MANAGEMENT
@@ -243,22 +281,32 @@ export default function TreasurerDashboard() {
         </p>
       </div>
 
-      {/* FEEDBACK MESSAGES */}
       {error && (
-        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div
+          role="alert"
+          className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
           <AlertTriangle size={18} />
           {error}
         </div>
       )}
 
       {success && (
-        <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+        <div
+          role="status"
+          className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"
+        >
           <CheckCircle size={18} />
           {success}
         </div>
       )}
 
-      {/* SUMMARY CARDS */}
+      {/*
+          GET /api/contributions/summary
+          GET /api/loans/summary
+          GET /api/penalties/summary
+          GET /api/loans?status=requested */}
+
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
 
         <StatCard
@@ -270,7 +318,7 @@ export default function TreasurerDashboard() {
 
         <StatCard
           title="Outstanding Loans"
-          value="KES 85,000"
+          value={formatCurrency(outstandingLoans)}
           description="Loans yet to be repaid"
           icon={HandCoins}
         />
@@ -290,7 +338,13 @@ export default function TreasurerDashboard() {
         />
       </div>
 
-      {/* RECORD M-PESA CONTRIBUTION */}
+      {/*
+          GET /api/memberships?status=active
+
+          POST /api/contribution
+          POST /api/loan-repayments
+           */}
+
       <Panel title="Record M-Pesa Contribution">
         <div className="mb-5 flex items-center gap-3 rounded-lg bg-green-50 p-4">
           <div className="rounded-lg bg-green-100 p-3">
@@ -317,7 +371,6 @@ export default function TreasurerDashboard() {
         >
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
 
-            {/* MEMBER */}
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700">
                 Select Member
@@ -340,7 +393,6 @@ export default function TreasurerDashboard() {
               </select>
             </div>
 
-            {/* M-PESA CODE */}
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700">
                 M-Pesa Transaction Code
@@ -361,7 +413,6 @@ export default function TreasurerDashboard() {
               </p>
             </div>
 
-            {/* AMOUNT */}
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700">
                 Amount (KES)
@@ -380,7 +431,6 @@ export default function TreasurerDashboard() {
               />
             </div>
 
-            {/* DATE */}
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700">
                 Payment Date
@@ -396,7 +446,6 @@ export default function TreasurerDashboard() {
               />
             </div>
 
-            {/* PURPOSE */}
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-700">
                 Payment Purpose
@@ -429,7 +478,11 @@ export default function TreasurerDashboard() {
         </form>
       </Panel>
 
-      {/* RECENT M-PESA TRANSACTIONS */}
+      {/* 
+          GET /api/contributions
+
+          GET /api/loan-repayments*/}
+
       <Panel
         title="Recent M-Pesa Transactions"
         action={
@@ -438,58 +491,68 @@ export default function TreasurerDashboard() {
           </span>
         }
       >
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[750px] text-left text-sm">
-            <thead className="border-b border-gray-200 bg-gray-50 text-gray-500">
-              <tr>
-                <th className="px-4 py-3 font-medium">Member</th>
-                <th className="px-4 py-3 font-medium">M-Pesa Code</th>
-                <th className="px-4 py-3 font-medium">Amount</th>
-                <th className="px-4 py-3 font-medium">Date</th>
-                <th className="px-4 py-3 font-medium">Purpose</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {transactions.map((transaction) => (
-                <tr
-                  key={transaction.id}
-                  className="border-b border-gray-100 hover:bg-gray-50"
-                >
-                  <td className="px-4 py-4 font-semibold text-gray-800">
-                    {transaction.member}
-                  </td>
-
-                  <td className="px-4 py-4 font-mono text-gray-600">
-                    {transaction.mpesaCode}
-                  </td>
-
-                  <td className="px-4 py-4 font-semibold text-green-800">
-                    {formatCurrency(transaction.amount)}
-                  </td>
-
-                  <td className="px-4 py-4 text-gray-500">
-                    {transaction.date}
-                  </td>
-
-                  <td className="px-4 py-4 text-gray-600">
-                    {transaction.purpose}
-                  </td>
-
-                  <td className="px-4 py-4">
-                    <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-800">
-                      Recorded
-                    </span>
-                  </td>
+        {transactions.length === 0 ? (
+          <p className="py-8 text-center text-sm text-gray-500">
+            No M-Pesa transactions recorded yet.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[750px] text-left text-sm">
+              <thead className="border-b border-gray-200 bg-gray-50 text-gray-500">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Member</th>
+                  <th className="px-4 py-3 font-medium">M-Pesa Code</th>
+                  <th className="px-4 py-3 font-medium">Amount</th>
+                  <th className="px-4 py-3 font-medium">Date</th>
+                  <th className="px-4 py-3 font-medium">Purpose</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+
+              <tbody>
+                {transactions.map((transaction) => (
+                  <tr
+                    key={transaction.id}
+                    className="border-b border-gray-100 hover:bg-gray-50"
+                  >
+                    <td className="px-4 py-4 font-semibold text-gray-800">
+                      {transaction.member}
+                    </td>
+
+                    <td className="px-4 py-4 font-mono text-gray-600">
+                      {transaction.mpesaCode}
+                    </td>
+
+                    <td className="px-4 py-4 font-semibold text-green-800">
+                      {formatCurrency(transaction.amount)}
+                    </td>
+
+                    <td className="px-4 py-4 text-gray-500">
+                      {transaction.date}
+                    </td>
+
+                    <td className="px-4 py-4 text-gray-600">
+                      {transaction.purpose}
+                    </td>
+
+                    <td className="px-4 py-4">
+                      <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-800">
+                        Recorded
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Panel>
 
-      {/* LOAN REQUESTS */}
+      {/* 
+          GET /api/loans?status=requested
+          PATCH /api/loans/<id>
+           */}
+
       <Panel
         title="Pending Loan Requests"
         action={
@@ -538,12 +601,13 @@ export default function TreasurerDashboard() {
                     </td>
 
                     <td className="px-4 py-4">
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         <ActionButton
                           onClick={() =>
                             handleLoanRequest(request.id, "approved")
                           }
                         >
+                          <CheckCircle size={15} />
                           Approve
                         </ActionButton>
 
@@ -565,49 +629,61 @@ export default function TreasurerDashboard() {
         )}
       </Panel>
 
-      {/* DEFAULTERS */}
+      {/* 
+          GET /api/penalties?status=unpaid
+          Retrieves outstanding penalties.
+*/}
+
       <Panel title="Members with Outstanding Payments">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[550px] text-left text-sm">
-            <thead className="border-b border-gray-200 bg-gray-50 text-gray-500">
-              <tr>
-                <th className="px-4 py-3 font-medium">Member</th>
-                <th className="px-4 py-3 font-medium">Outstanding Amount</th>
-                <th className="px-4 py-3 font-medium">Days Late</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {defaulters.map((member) => (
-                <tr
-                  key={member.id}
-                  className="border-b border-gray-100"
-                >
-                  <td className="px-4 py-4 font-semibold text-gray-800">
-                    {member.member}
-                  </td>
-
-                  <td className="px-4 py-4 text-gray-700">
-                    {formatCurrency(member.amount)}
-                  </td>
-
-                  <td className="px-4 py-4 text-red-600">
-                    {member.daysLate} days
-                  </td>
-
-                  <td className="px-4 py-4">
-                    <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">
-                      Overdue
-                    </span>
-                  </td>
+        {defaulters.length === 0 ? (
+          <p className="py-8 text-center text-sm text-gray-500">
+            No members have outstanding payments.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[550px] text-left text-sm">
+              <thead className="border-b border-gray-200 bg-gray-50 text-gray-500">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Member</th>
+                  <th className="px-4 py-3 font-medium">Outstanding Amount</th>
+                  <th className="px-4 py-3 font-medium">Days Late</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+
+              <tbody>
+                {defaulters.map((member) => (
+                  <tr
+                    key={member.id}
+                    className="border-b border-gray-100"
+                  >
+                    <td className="px-4 py-4 font-semibold text-gray-800">
+                      {member.member}
+                    </td>
+
+                    <td className="px-4 py-4 text-gray-700">
+                      {formatCurrency(member.amount)}
+                    </td>
+
+                    <td className="px-4 py-4 text-red-600">
+                      {member.daysLate} days
+                    </td>
+
+                    <td className="px-4 py-4">
+                      <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
+                        Overdue
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Panel>
 
     </div>
   );
 }
+
+

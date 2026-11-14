@@ -6,10 +6,11 @@ import {
   CalendarDays,
   AlertTriangle,
   ArrowUpRight,
-  Clock,
   CheckCircle,
   FileText,
   PlusCircle,
+  Eye,
+  X,
 } from "lucide-react";
 
 import {
@@ -103,18 +104,46 @@ const announcements = [
   },
 ];
 
+const initialMinutes = [
+  {
+    id: 1,
+    title: "Monthly Chama Meeting",
+    date: "2026-10-20",
+    attendance: 18,
+    status: "Published",
+    content:
+      "Members discussed monthly contributions, financial progress and upcoming activities. The treasurer presented the financial report. Members agreed to continue making contributions before the monthly deadline.",
+  },
+  {
+    id: 2,
+    title: "Finance Review Meeting",
+    date: "2026-09-15",
+    attendance: 15,
+    status: "Published",
+    content:
+      "The meeting reviewed financial records and outstanding contributions. Members agreed that reminders should be sent before the next payment deadline.",
+  },
+];
+
 const money = (amount) =>
   `KES ${Number(amount).toLocaleString("en-KE")}`;
 
-// DEMO CALCULATION:
-// This uses a 10% flat interest rate for the whole loan.
-// Replace this with the actual interest rules configured by the Chama.
 const DEMO_INTEREST_RATE = 10;
+
+const getToday = () => {
+  const today = new Date();
+  const offset = today.getTimezoneOffset();
+
+  return new Date(today.getTime() - offset * 60000)
+    .toISOString()
+    .slice(0, 10);
+};
 
 export default function MemberDashboard() {
   const [contributions] = useState(initialContributions);
   const [loans] = useState(initialLoans);
   const [loanRequests, setLoanRequests] = useState([]);
+  const [minutes] = useState(initialMinutes);
 
   const [loanForm, setLoanForm] = useState({
     amount: "",
@@ -124,13 +153,13 @@ export default function MemberDashboard() {
 
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [selectedMinutes, setSelectedMinutes] = useState(null);
 
+  // Calculate loan repayment estimates automatically.
   const loanAmount = Number(loanForm.amount) || 0;
   const repaymentMonths = Number(loanForm.repaymentMonths) || 0;
 
-  const interest =
-    loanAmount * (DEMO_INTEREST_RATE / 100);
-
+  const interest = loanAmount * (DEMO_INTEREST_RATE / 100);
   const totalRepayable = loanAmount + interest;
 
   const monthlyInstallment =
@@ -138,50 +167,82 @@ export default function MemberDashboard() {
       ? totalRepayable / repaymentMonths
       : 0;
 
+  const activeLoan = loans.find(
+    (loan) => loan.status === "Active"
+  );
+
+  // Handle loan application submission.
   const submitLoanRequest = (event) => {
     event.preventDefault();
 
     setError("");
     setMessage("");
 
-    if (loanAmount < 1000) {
-      setError("The minimum loan application amount is KES 1,000.");
+    const amount = Number(loanForm.amount);
+    const months = Number(loanForm.repaymentMonths);
+    const purpose = loanForm.purpose.trim();
+
+    if (
+      loanForm.amount.trim() === "" ||
+      !Number.isFinite(amount)
+    ) {
+      setError("Please enter a valid loan amount.");
       return;
     }
 
-    if (loanAmount > 100000) {
-      setError("The maximum demo loan application amount is KES 100,000.");
+    if (amount < 1000 || amount > 100000) {
+      setError(
+        "Loan amount must be between KES 1,000 and KES 100,000."
+      );
       return;
     }
 
-    if (!repaymentMonths || repaymentMonths < 1) {
+    if (!Number.isInteger(months) || months < 1) {
       setError("Please select a valid repayment period.");
       return;
     }
 
-    if (!loanForm.purpose.trim()) {
-      setError("Please explain why you need the loan.");
+    if (purpose.length < 5) {
+      setError(
+        "Please provide a loan purpose of at least 5 characters."
+      );
       return;
     }
 
-    // BACKEND: POST /api/loans
-    // Send amount, repayment_months and purpose.
-    // The backend must calculate interest and enforce loan eligibility.
-    // Associate the application with the authenticated member.
+    const hasPendingRequest = loanRequests.some(
+      (request) => request.status === "Pending"
+    );
+
+    if (hasPendingRequest) {
+      setError(
+        "You already have a pending loan application. Please wait for a decision."
+      );
+      return;
+    }
+
+    const calculatedInterest =
+      amount * (DEMO_INTEREST_RATE / 100);
+
+    const calculatedTotal = amount + calculatedInterest;
 
     const newRequest = {
       id: Date.now(),
-      amount: loanAmount,
-      purpose: loanForm.purpose,
-      date: new Date().toISOString().slice(0, 10),
-      repaymentMonths,
-      interest,
-      totalRepayable,
-      monthlyInstallment,
+      amount,
+      purpose,
+      date: getToday(),
+      repaymentMonths: months,
+      interest: calculatedInterest,
+      totalRepayable: calculatedTotal,
+      monthlyInstallment: calculatedTotal / months,
       status: "Pending",
     };
 
-    setLoanRequests((current) => [newRequest, ...current]);
+    // DEMO: Add the application to local React state.
+    // BACKEND: Connect this to POST /api/loans later.
+    setLoanRequests((current) => [
+      newRequest,
+      ...current,
+    ]);
 
     setLoanForm({
       amount: "",
@@ -189,10 +250,10 @@ export default function MemberDashboard() {
       purpose: "",
     });
 
-    setMessage("Your loan application has been submitted successfully.");
+    setMessage(
+      "Your loan application has been submitted successfully."
+    );
   };
-
-  const activeLoan = loans.find((loan) => loan.status === "Active");
 
   return (
     <div className="space-y-6">
@@ -218,33 +279,40 @@ export default function MemberDashboard() {
         </div>
       </div>
 
-      {/* Feedback */}
+      {/* Success message */}
       {message && (
-        <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
-          <div className="flex items-center justify-between gap-3">
-            <span className="flex items-center gap-2">
-              <CheckCircle size={18} />
-              {message}
-            </span>
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+          <span className="flex items-center gap-2">
+            <CheckCircle size={18} />
+            {message}
+          </span>
 
-            <button
-              type="button"
-              onClick={() => setMessage("")}
-              className="font-semibold underline"
-            >
-              Dismiss
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setMessage("")}
+            className="font-semibold underline"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
+      {/* Error message */}
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-300 bg-gray-50 p-3 text-sm text-gray-800">
+          <span>{error}</span>
+
+          <button
+            type="button"
+            onClick={() => setError("")}
+            className="font-semibold underline"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
-      {/* Account summary */}
+      {/* Account statistics */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           title="Total Contributions"
@@ -277,6 +345,7 @@ export default function MemberDashboard() {
 
       {/* Loan information */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+
         <Panel title="My Active Loan">
           {activeLoan ? (
             <div className="space-y-4">
@@ -292,14 +361,20 @@ export default function MemberDashboard() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg bg-gray-50 p-3">
-                  <p className="text-xs text-gray-500">Original loan</p>
+                  <p className="text-xs text-gray-500">
+                    Original loan
+                  </p>
+
                   <p className="mt-1 font-semibold text-gray-800">
                     {money(activeLoan.amount)}
                   </p>
                 </div>
 
                 <div className="rounded-lg bg-gray-50 p-3">
-                  <p className="text-xs text-gray-500">Next repayment</p>
+                  <p className="text-xs text-gray-500">
+                    Next repayment
+                  </p>
+
                   <p className="mt-1 font-semibold text-gray-800">
                     {activeLoan.nextPayment}
                   </p>
@@ -352,14 +427,18 @@ export default function MemberDashboard() {
             </p>
           )}
         </Panel>
+
       </div>
 
-      {/* Apply for a loan */}
+      {/* Loan application form */}
       <Panel title="Apply for a Loan">
+
         <div className="mb-5 rounded-lg border border-green-100 bg-green-50 p-4">
           <div className="flex items-center gap-2 text-green-900">
             <HandCoins size={21} />
-            <h3 className="font-semibold">Loan Application</h3>
+            <h3 className="font-semibold">
+              Loan Application
+            </h3>
           </div>
 
           <p className="mt-1 text-sm text-green-800">
@@ -368,9 +447,12 @@ export default function MemberDashboard() {
           </p>
         </div>
 
-        <form onSubmit={submitLoanRequest} className="space-y-5">
-
+        <form
+          onSubmit={submitLoanRequest}
+          className="space-y-5"
+        >
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">
                 Loan Amount (KES)
@@ -378,15 +460,17 @@ export default function MemberDashboard() {
 
               <input
                 type="number"
+                name="amount"
                 min="1000"
                 max="100000"
                 step="100"
+                required
                 value={loanForm.amount}
                 onChange={(event) =>
-                  setLoanForm({
-                    ...loanForm,
+                  setLoanForm((current) => ({
+                    ...current,
                     amount: event.target.value,
-                  })
+                  }))
                 }
                 placeholder="e.g. 15000"
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-700 focus:ring-1 focus:ring-green-700"
@@ -403,12 +487,14 @@ export default function MemberDashboard() {
               </label>
 
               <select
+                name="repaymentMonths"
+                required
                 value={loanForm.repaymentMonths}
                 onChange={(event) =>
-                  setLoanForm({
-                    ...loanForm,
+                  setLoanForm((current) => ({
+                    ...current,
                     repaymentMonths: event.target.value,
-                  })
+                  }))
                 }
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-700"
               >
@@ -420,6 +506,7 @@ export default function MemberDashboard() {
                 <option value="12">12 Months</option>
               </select>
             </div>
+
           </div>
 
           <div>
@@ -428,28 +515,35 @@ export default function MemberDashboard() {
             </label>
 
             <textarea
+              name="purpose"
               rows="3"
+              required
+              minLength={5}
               value={loanForm.purpose}
               onChange={(event) =>
-                setLoanForm({
-                  ...loanForm,
+                setLoanForm((current) => ({
+                  ...current,
                   purpose: event.target.value,
-                })
+                }))
               }
               placeholder="Explain why you are requesting this loan..."
               className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-700"
             />
           </div>
 
-          {/* Repayment calculation */}
+          {/* Repayment estimate */}
           <div className="rounded-xl border border-gray-200 p-4">
             <h3 className="mb-4 font-semibold text-green-950">
               Estimated Loan Repayment
             </h3>
 
             <div className="space-y-3 text-sm">
+
               <div className="flex justify-between gap-3">
-                <span className="text-gray-500">Loan amount</span>
+                <span className="text-gray-500">
+                  Loan amount
+                </span>
+
                 <span className="font-medium text-gray-800">
                   {money(loanAmount)}
                 </span>
@@ -459,6 +553,7 @@ export default function MemberDashboard() {
                 <span className="text-gray-500">
                   Interest ({DEMO_INTEREST_RATE}% flat)
                 </span>
+
                 <span className="font-medium text-gray-800">
                   {money(interest)}
                 </span>
@@ -468,6 +563,7 @@ export default function MemberDashboard() {
                 <span className="font-semibold text-gray-700">
                   Total repayable
                 </span>
+
                 <span className="font-bold text-green-900">
                   {money(totalRepayable)}
                 </span>
@@ -477,10 +573,12 @@ export default function MemberDashboard() {
                 <span className="font-medium text-green-900">
                   Monthly instalment
                 </span>
+
                 <span className="font-bold text-green-900">
                   {money(monthlyInstallment)}
                 </span>
               </div>
+
             </div>
 
             <p className="mt-3 text-xs text-gray-500">
@@ -490,12 +588,15 @@ export default function MemberDashboard() {
             </p>
           </div>
 
-          <ActionButton type="submit">
-            <span className="flex items-center gap-2">
-              <PlusCircle size={18} />
-              Submit Loan Application
-            </span>
-          </ActionButton>
+          {/* Native submit button */}
+          <button
+            type="submit"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-green-900 px-5 py-3 font-semibold text-white transition hover:bg-green-800 focus:outline-none focus:ring-2 focus:ring-green-700 focus:ring-offset-2"
+          >
+            <PlusCircle size={18} />
+            Submit Loan Application
+          </button>
+
         </form>
       </Panel>
 
@@ -528,9 +629,13 @@ export default function MemberDashboard() {
                     {money(contribution.amount)}
                   </td>
 
-                  <td className="p-3">{contribution.date}</td>
+                  <td className="p-3">
+                    {contribution.date}
+                  </td>
 
-                  <td className="p-3">{contribution.purpose}</td>
+                  <td className="p-3">
+                    {contribution.purpose}
+                  </td>
 
                   <td className="p-3">
                     <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-800">
@@ -539,6 +644,17 @@ export default function MemberDashboard() {
                   </td>
                 </tr>
               ))}
+
+              {contributions.length === 0 && (
+                <tr>
+                  <td
+                    colSpan="5"
+                    className="p-5 text-center text-gray-500"
+                  >
+                    You have no recorded contributions yet.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -577,6 +693,12 @@ export default function MemberDashboard() {
               </span>
             </div>
           ))}
+
+          {upcomingMeetings.length === 0 && (
+            <p className="py-4 text-center text-sm text-gray-500">
+              There are no upcoming meetings.
+            </p>
+          )}
         </div>
       </Panel>
 
@@ -605,28 +727,122 @@ export default function MemberDashboard() {
               </p>
             </div>
           ))}
+
+          {announcements.length === 0 && (
+            <p className="py-4 text-center text-sm text-gray-500">
+              There are no announcements at the moment.
+            </p>
+          )}
         </div>
       </Panel>
 
       {/* Meeting minutes */}
       <Panel title="Meeting Minutes">
-        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-          <div>
-            <h3 className="font-semibold text-gray-800">
-              Access meeting records
-            </h3>
+        <p className="mb-4 text-sm text-gray-500">
+          View published minutes and meeting records shared by your Secretary.
+        </p>
 
-            <p className="mt-1 text-sm text-gray-500">
-              View published minutes and meeting records shared by your Secretary.
+        <div className="space-y-3">
+          {minutes
+            .filter((item) => item.status === "Published")
+            .map((item) => (
+              <div
+                key={item.id}
+                className="flex flex-col justify-between gap-3 rounded-lg border border-gray-200 p-4 sm:flex-row sm:items-center"
+              >
+                <div>
+                  <h3 className="font-semibold text-gray-800">
+                    {item.title}
+                  </h3>
+
+                  <p className="mt-1 text-sm text-gray-500">
+                    {item.date} · {item.attendance} attendees
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedMinutes(item)}
+                  className="flex items-center gap-2 self-start text-sm font-medium text-green-800 hover:underline sm:self-center"
+                >
+                  <Eye size={17} />
+                  View Minutes
+                </button>
+              </div>
+            ))}
+
+          {minutes.filter((item) => item.status === "Published").length === 0 && (
+            <p className="py-4 text-center text-sm text-gray-500">
+              No published meeting minutes are available.
             </p>
-          </div>
-
-          <div className="flex items-center gap-2 text-sm font-medium text-green-800">
-            <FileText size={18} />
-            Published records
-          </div>
+          )}
         </div>
       </Panel>
+
+      {/* Meeting minutes modal */}
+      {selectedMinutes && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-green-950">
+                  Meeting Minutes
+                </h2>
+
+                <p className="mt-1 text-sm text-gray-500">
+                  {selectedMinutes.title}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedMinutes(null)}
+                className="text-gray-500 hover:text-gray-800"
+                aria-label="Close meeting minutes"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-sm">
+              <p>
+                <strong>Meeting Date:</strong>{" "}
+                {selectedMinutes.date}
+              </p>
+
+              <p>
+                <strong>Attendance:</strong>{" "}
+                {selectedMinutes.attendance} members
+              </p>
+
+              <p>
+                <strong>Status:</strong>{" "}
+                {selectedMinutes.status}
+              </p>
+
+              <div>
+                <strong>Minutes:</strong>
+
+                <p className="mt-2 whitespace-pre-wrap rounded-lg bg-gray-50 p-4 leading-6 text-gray-700">
+                  {selectedMinutes.content}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <ActionButton
+                type="button"
+                onClick={() => setSelectedMinutes(null)}
+              >
+                Close
+              </ActionButton>
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
