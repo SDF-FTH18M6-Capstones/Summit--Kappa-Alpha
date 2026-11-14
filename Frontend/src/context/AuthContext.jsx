@@ -1,4 +1,3 @@
-
 import {
   createContext,
   useCallback,
@@ -9,12 +8,20 @@ import {
 } from "react";
 
 import { useNavigate } from "react-router-dom";
-import { tokenStore, userStore } from "../api/axiosClient";
+import {
+  tokenStore,
+  userStore,
+} from "../api/axiosClient";
+
+import axiosClient from "../api/axiosClient";
 
 const AuthContext = createContext(null);
 
-// Backend URL
-const API_URL = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+const normalizeRole = (role) =>
+  String(role || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() =>
@@ -25,7 +32,6 @@ export function AuthProvider({ children }) {
 
   const navigate = useNavigate();
 
-  // Check authentication when the application loads
   useEffect(() => {
     let isMounted = true;
 
@@ -41,27 +47,21 @@ export function AuthProvider({ children }) {
       }
 
       try {
-        const response = await fetch(`${API_URL}/auth/me`, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        });
+        const response = await axiosClient.get("/auth/me");
 
-        if (!response.ok) {
-          throw new Error("Authentication expired. Please log in again.");
-        }
-
-        const data = await response.json();
-        const currentUser = data.user ?? data;
+        const data = response.data;
+        const currentUser =
+          data.user ?? data.data?.user ?? data;
 
         if (isMounted) {
           userStore.set(currentUser);
           setUser(currentUser);
         }
       } catch (error) {
-        console.error("Authentication check failed:", error);
+        console.error(
+          "Authentication check failed:",
+          error.response?.data || error.message
+        );
 
         tokenStore.clear();
         userStore.clear();
@@ -83,38 +83,32 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  // Login
   const login = useCallback(async (email, password) => {
     try {
-      const response = await fetch(`${API_URL}/auth/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          password,
-        }),
+      const response = await axiosClient.post("/auth/login", {
+        email: email.trim(),
+        password,
       });
 
-      const data = await response.json();
+      const data = response.data;
 
-      if (!response.ok) {
-        throw new Error(
-          data.message || data.error || "Login failed"
-        );
-      }
-
-      // Accept either access_token or token
       const token = data.access_token || data.token;
 
       if (!token) {
-        throw new Error("No authentication token returned by the server.");
+        throw new Error(
+          "The backend did not return an authentication token."
+        );
       }
 
-      const loggedInUser = data.user ?? data;
+      const loggedInUser =
+        data.user ?? data.data?.user;
 
-      // Save authentication details
+      if (!loggedInUser) {
+        throw new Error(
+          "The backend did not return user details."
+        );
+      }
+
       tokenStore.set(token);
       userStore.set(loggedInUser);
 
@@ -125,28 +119,33 @@ export function AuthProvider({ children }) {
         user: loggedInUser,
       };
     } catch (error) {
+      console.error(
+        "Login failed:",
+        error.response?.data || error.message
+      );
+
       return {
         success: false,
-        message: error.message,
+        message:
+          error.response?.data?.message ||
+          error.response?.data?.error ||
+          error.message ||
+          "Unable to log in.",
       };
     }
   }, []);
 
   // Logout
   const logout = useCallback(async () => {
-    const token = tokenStore.get();
-
     try {
-      if (token) {
-        await fetch(`${API_URL}/auth/logout`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+      if (tokenStore.get()) {
+        await axiosClient.post("/auth/logout");
       }
     } catch (error) {
-      console.error("Logout request failed:", error);
+      console.error(
+        "Logout request failed:",
+        error.response?.data || error.message
+      );
     } finally {
       tokenStore.clear();
       userStore.clear();
@@ -162,12 +161,20 @@ export function AuthProvider({ children }) {
     (roles) => {
       if (!roles?.length) return true;
 
-      return roles.includes(user?.role);
+      const userRole = normalizeRole(
+        user?.role ||
+        user?.role_name ||
+        user?.user?.role ||
+        user?.membership?.role
+      );
+
+      return roles.some(
+        (role) => normalizeRole(role) === userRole
+      );
     },
     [user]
   );
 
-  // Share authentication data with the application
   const value = useMemo(
     () => ({
       user,
@@ -188,7 +195,6 @@ export function AuthProvider({ children }) {
   );
 }
 
-// Custom authentication hook
 export function useAuth() {
   const context = useContext(AuthContext);
 
@@ -200,5 +206,6 @@ export function useAuth() {
 
   return context;
 }
+
 
 

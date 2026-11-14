@@ -10,6 +10,7 @@ import {
   Trash2,
   Search,
   Upload,
+  X,
 } from "lucide-react";
 
 import {
@@ -26,6 +27,7 @@ const initialMeetings = [
     date: "2026-11-20",
     time: "10:00",
     venue: "Community Hall",
+    agenda: "Monthly contributions, financial updates and member concerns.",
     status: "Upcoming",
   },
   {
@@ -34,6 +36,7 @@ const initialMeetings = [
     date: "2026-12-05",
     time: "14:00",
     venue: "Summit Conference Room",
+    agenda: "Annual reports, elections and planning for the coming year.",
     status: "Upcoming",
   },
 ];
@@ -86,6 +89,9 @@ const initialMinutes = [
     title: "Monthly Chama Meeting",
     date: "2026-10-20",
     attendance: 18,
+    content:
+      "Members discussed monthly contributions, financial progress and upcoming activities. The treasurer presented the financial report. Members agreed to continue making contributions before the monthly deadline.",
+    attachments: [],
     status: "Published",
   },
   {
@@ -93,9 +99,21 @@ const initialMinutes = [
     title: "Finance Review Meeting",
     date: "2026-09-15",
     attendance: 15,
+    content:
+      "The meeting reviewed the financial records and outstanding contributions. Members agreed that reminders should be sent before the next payment deadline.",
+    attachments: [],
     status: "Draft",
   },
 ];
+
+const getToday = () => {
+  const today = new Date();
+  const offset = today.getTimezoneOffset();
+
+  return new Date(today.getTime() - offset * 60000)
+    .toISOString()
+    .slice(0, 10);
+};
 
 export default function SecretaryDashboard() {
   const [meetings, setMeetings] = useState(initialMeetings);
@@ -125,10 +143,23 @@ export default function SecretaryDashboard() {
     content: "",
   });
 
+  const [attachments, setAttachments] = useState([]);
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [selectedMeeting, setSelectedMeeting] = useState(null);
+  const [selectedMinutes, setSelectedMinutes] = useState(null);
 
-  // Schedule a meeting.
+  const showSuccess = (text) => {
+    setMessage(text);
+    setError("");
+  };
+
+  const showError = (text) => {
+    setError(text);
+    setMessage("");
+  };
+
   const scheduleMeeting = (event) => {
     event.preventDefault();
 
@@ -139,24 +170,29 @@ export default function SecretaryDashboard() {
       !meetingForm.venue.trim() ||
       !meetingForm.agenda.trim()
     ) {
-      setMessage("Please fill in all meeting details.");
+      showError("Please fill in all meeting details.");
+      return;
+    }
+
+    if (meetingForm.date < getToday()) {
+      showError("Please select today or a future date for the meeting.");
       return;
     }
 
     // BACKEND: POST /api/meetings
-    // Send meeting details and the email reminder preference.
+    // Send meeting details and email reminder preference.
 
-    setMeetings((current) => [
-      ...current,
-      {
-        id: Date.now(),
-        title: meetingForm.title,
-        date: meetingForm.date,
-        time: meetingForm.time,
-        venue: meetingForm.venue,
-        status: "Upcoming",
-      },
-    ]);
+    const newMeeting = {
+      id: Date.now(),
+      title: meetingForm.title.trim(),
+      date: meetingForm.date,
+      time: meetingForm.time,
+      venue: meetingForm.venue.trim(),
+      agenda: meetingForm.agenda.trim(),
+      status: "Upcoming",
+    };
+
+    setMeetings((current) => [...current, newMeeting]);
 
     setMeetingForm({
       title: "",
@@ -167,10 +203,34 @@ export default function SecretaryDashboard() {
       emailReminder: true,
     });
 
-    setMessage("Meeting scheduled successfully.");
+    showSuccess("Meeting scheduled successfully.");
   };
 
-  // Publish an announcement.
+  const viewMeeting = (meeting) => {
+    setSelectedMeeting(meeting);
+  };
+
+  const deleteMeeting = (id) => {
+    const meeting = meetings.find((item) => item.id === id);
+
+    if (!meeting) return;
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${meeting.title}"?`
+    );
+
+    if (!confirmed) return;
+
+    // BACKEND: DELETE /api/meetings/${id}
+
+    setMeetings((current) =>
+      current.filter((item) => item.id !== id)
+    );
+
+    setSelectedMeeting(null);
+    showSuccess("Meeting deleted successfully.");
+  };
+
   const postAnnouncement = (event) => {
     event.preventDefault();
 
@@ -178,19 +238,18 @@ export default function SecretaryDashboard() {
       !announcementForm.title.trim() ||
       !announcementForm.message.trim()
     ) {
-      setMessage("Please enter an announcement title and message.");
+      showError("Please enter an announcement title and message.");
       return;
     }
 
     // BACKEND: POST /api/announcements
-    // Send the announcement and optional email notification.
 
     setAnnouncements((current) => [
       {
         id: Date.now(),
-        title: announcementForm.title,
-        message: announcementForm.message,
-        date: new Date().toISOString().slice(0, 10),
+        title: announcementForm.title.trim(),
+        message: announcementForm.message.trim(),
+        date: getToday(),
       },
       ...current,
     ]);
@@ -201,36 +260,91 @@ export default function SecretaryDashboard() {
       emailNotification: false,
     });
 
-    setMessage("Announcement published successfully.");
+    showSuccess("Announcement published successfully.");
+  };
+  const deleteAnnouncement = (id) => {
+    const announcement = announcements.find(
+      (item) => item.id === id
+    );
+
+    if (!announcement) return;
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${announcement.title}"?`
+    );
+
+    if (!confirmed) return;
+
+    // BACKEND: DELETE /api/announcements/${id}
+
+    setAnnouncements((current) =>
+      current.filter((item) => item.id !== id)
+    );
+
+    showSuccess("Announcement removed successfully.");
   };
 
-  // Save meeting minutes.
+  const handleAttachments = (event) => {
+    const selectedFiles = Array.from(event.target.files || []);
+
+    if (selectedFiles.length === 0) return;
+
+    const allowedFiles = selectedFiles.filter((file) => {
+      const isPdf = file.type === "application/pdf";
+      const isImage = file.type.startsWith("image/");
+
+      return isPdf || isImage;
+    });
+
+    if (allowedFiles.length !== selectedFiles.length) {
+      showError("Only PDF files and images are allowed.");
+    } else {
+      setError("");
+    }
+
+    setAttachments((current) => [...current, ...allowedFiles]);
+    event.target.value = "";
+  };
+
+  const removeAttachment = (index) => {
+    setAttachments((current) =>
+      current.filter((_, i) => i !== index)
+    );
+  };
+
   const saveMinutes = (event) => {
     event.preventDefault();
 
     if (
       !minutesForm.title.trim() ||
       !minutesForm.date ||
-      !minutesForm.attendance ||
+      minutesForm.attendance === "" ||
       !minutesForm.content.trim()
     ) {
-      setMessage("Please complete all meeting minutes details.");
+      showError("Please complete all meeting minutes details.");
+      return;
+    }
+
+    const attendance = Number(minutesForm.attendance);
+
+    if (!Number.isInteger(attendance) || attendance < 0) {
+      showError("Attendance must be a valid non-negative whole number.");
       return;
     }
 
     // BACKEND: POST /api/meetings/minutes
-    // Upload the minutes and any supporting attachments.
 
-    setMinutes((current) => [
-      {
-        id: Date.now(),
-        title: minutesForm.title,
-        date: minutesForm.date,
-        attendance: Number(minutesForm.attendance),
-        status: "Draft",
-      },
-      ...current,
-    ]);
+    const newMinutes = {
+      id: Date.now(),
+      title: minutesForm.title.trim(),
+      date: minutesForm.date,
+      attendance,
+      content: minutesForm.content.trim(),
+      attachments: attachments.map((file) => file.name),
+      status: "Draft",
+    };
+
+    setMinutes((current) => [newMinutes, ...current]);
 
     setMinutesForm({
       title: "",
@@ -239,10 +353,18 @@ export default function SecretaryDashboard() {
       content: "",
     });
 
-    setMessage("Meeting minutes saved as a draft.");
+    setAttachments([]);
+
+    showSuccess("Meeting minutes saved as a draft.");
   };
 
   const publishMinutes = (id) => {
+    const confirmed = window.confirm(
+      "Are you sure you want to publish these meeting minutes?"
+    );
+
+    if (!confirmed) return;
+
     // BACKEND: PATCH /api/meetings/minutes/${id}/publish
 
     setMinutes((current) =>
@@ -253,29 +375,18 @@ export default function SecretaryDashboard() {
       )
     );
 
-    setMessage("Meeting minutes published successfully.");
-  };
-
-  const deleteAnnouncement = (id) => {
-    // BACKEND: DELETE /api/announcements/${id}
-
-    setAnnouncements((current) =>
-      current.filter((item) => item.id !== id)
-    );
-
-    setMessage("Announcement removed.");
+    setSelectedMinutes(null);
+    showSuccess("Meeting minutes published successfully.");
   };
 
   const filteredMembers = members.filter((member) =>
     `${member.name} ${member.phone} ${member.email}`
       .toLowerCase()
-      .includes(search.toLowerCase())
+      .includes(search.toLowerCase().trim())
   );
 
   return (
     <div className="space-y-6">
-
-      {/* Dashboard heading */}
       <div>
         <p className="text-sm font-medium text-green-800">
           Chama Administration
@@ -290,22 +401,29 @@ export default function SecretaryDashboard() {
         </p>
       </div>
 
-      {/* Feedback message */}
-      {message && (
-        <div className="flex items-center justify-between rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800">
-          {message}
+      {(message || error) && (
+        <div
+          className={`flex items-center justify-between rounded-lg border p-3 text-sm ${
+            error
+              ? "border-gray-300 bg-gray-50 text-gray-800"
+              : "border-green-200 bg-green-50 text-green-800"
+          }`}
+        >
+          <span>{error || message}</span>
 
           <button
             type="button"
-            onClick={() => setMessage("")}
-            className="font-semibold underline"
+            onClick={() => {
+              setMessage("");
+              setError("");
+            }}
+            className="ml-3 font-semibold underline"
           >
             Dismiss
           </button>
         </div>
       )}
 
-      {/* Summary cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           title="Total Members"
@@ -336,10 +454,8 @@ export default function SecretaryDashboard() {
         />
       </div>
 
-      {/* Schedule a meeting */}
       <Panel title="Schedule a Meeting">
         <form onSubmit={scheduleMeeting} className="space-y-4">
-
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">
@@ -386,6 +502,7 @@ export default function SecretaryDashboard() {
 
               <input
                 type="date"
+                min={getToday()}
                 value={meetingForm.date}
                 onChange={(e) =>
                   setMeetingForm({
@@ -459,10 +576,9 @@ export default function SecretaryDashboard() {
         </form>
       </Panel>
 
-      {/* Upcoming meetings */}
       <Panel title="Upcoming Meetings">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[550px] text-left text-sm">
+          <table className="w-full min-w-[700px] text-left text-sm">
             <thead className="bg-gray-50 text-gray-600">
               <tr>
                 <th className="p-3">Meeting</th>
@@ -470,6 +586,7 @@ export default function SecretaryDashboard() {
                 <th className="p-3">Time</th>
                 <th className="p-3">Venue</th>
                 <th className="p-3">Status</th>
+                <th className="p-3">Actions</th>
               </tr>
             </thead>
 
@@ -479,25 +596,58 @@ export default function SecretaryDashboard() {
                   <td className="p-3 font-medium text-gray-800">
                     {meeting.title}
                   </td>
+
                   <td className="p-3">{meeting.date}</td>
                   <td className="p-3">{meeting.time}</td>
                   <td className="p-3">{meeting.venue}</td>
+
                   <td className="p-3">
                     <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-800">
                       {meeting.status}
                     </span>
                   </td>
+
+                  <td className="p-3">
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => viewMeeting(meeting)}
+                        className="text-green-800 hover:text-green-950"
+                        title="View meeting"
+                      >
+                        <Eye size={17} />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => deleteMeeting(meeting.id)}
+                        className="text-gray-500 hover:text-red-700"
+                        title="Delete meeting"
+                      >
+                        <Trash2 size={17} />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
+
+              {meetings.length === 0 && (
+                <tr>
+                  <td
+                    colSpan="6"
+                    className="p-5 text-center text-gray-500"
+                  >
+                    No meetings scheduled yet.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </Panel>
 
-      {/* Post announcement */}
       <Panel title="Post an Announcement">
         <form onSubmit={postAnnouncement} className="space-y-4">
-
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">
               Announcement Headline
@@ -560,7 +710,6 @@ export default function SecretaryDashboard() {
         </form>
       </Panel>
 
-      {/* Existing announcements */}
       <Panel title="Recent Announcements">
         <div className="space-y-3">
           {announcements.map((announcement) => (
@@ -585,13 +734,19 @@ export default function SecretaryDashboard() {
               <button
                 type="button"
                 onClick={() => deleteAnnouncement(announcement.id)}
-                className="flex items-center gap-2 self-start text-sm font-medium text-red-600 hover:text-red-800 sm:self-center"
+                className="flex items-center gap-2 self-start text-sm font-medium text-gray-600 hover:text-red-700 sm:self-center"
               >
                 <Trash2 size={16} />
                 Delete
               </button>
             </div>
           ))}
+
+          {announcements.length === 0 && (
+            <p className="py-5 text-center text-sm text-gray-500">
+              No announcements have been published yet.
+            </p>
+          )}
         </div>
       </Panel>
 
@@ -630,9 +785,11 @@ export default function SecretaryDashboard() {
                   <td className="p-3 font-medium text-gray-800">
                     {member.name}
                   </td>
+
                   <td className="p-3">{member.phone}</td>
                   <td className="p-3">{member.email}</td>
                   <td className="p-3">{member.joined}</td>
+
                   <td className="p-3">
                     <span
                       className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -649,7 +806,10 @@ export default function SecretaryDashboard() {
 
               {filteredMembers.length === 0 && (
                 <tr>
-                  <td colSpan="5" className="p-5 text-center text-gray-500">
+                  <td
+                    colSpan="5"
+                    className="p-5 text-center text-gray-500"
+                  >
                     No members found.
                   </td>
                 </tr>
@@ -659,10 +819,8 @@ export default function SecretaryDashboard() {
         </div>
       </Panel>
 
-      {/* Meeting minutes */}
       <Panel title="Meeting Minutes Management">
         <form onSubmit={saveMinutes} className="space-y-4">
-
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">
@@ -709,6 +867,7 @@ export default function SecretaryDashboard() {
               <input
                 type="number"
                 min="0"
+                step="1"
                 value={minutesForm.attendance}
                 onChange={(e) =>
                   setMinutesForm({
@@ -751,12 +910,37 @@ export default function SecretaryDashboard() {
               type="file"
               accept=".pdf,image/*"
               multiple
+              onChange={handleAttachments}
               className="mt-3 block w-full text-sm text-gray-500 file:mr-3 file:rounded-lg file:border-0 file:bg-green-100 file:px-4 file:py-2 file:font-medium file:text-green-800"
             />
 
+            {attachments.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {attachments.map((file, index) => (
+                  <div
+                    key={`${file.name}-${index}`}
+                    className="flex items-center justify-between rounded-md bg-gray-50 px-3 py-2 text-sm"
+                  >
+                    <span className="truncate text-gray-700">
+                      {file.name}
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() => removeAttachment(index)}
+                      className="ml-3 text-gray-500 hover:text-red-700"
+                      title="Remove attachment"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <p className="mt-2 text-xs text-gray-400">
-              Attachments are for the interface preview. File upload will be
-              connected to the backend later.
+              Selected files are listed for this demo. Actual file storage
+              will be connected to the backend later.
             </p>
           </div>
 
@@ -765,21 +949,20 @@ export default function SecretaryDashboard() {
           </ActionButton>
         </form>
 
-        {/* Saved minutes */}
         <div className="mt-6">
           <h3 className="mb-3 font-semibold text-gray-800">
             Saved Meeting Minutes
           </h3>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[500px] text-left text-sm">
+            <table className="w-full min-w-[600px] text-left text-sm">
               <thead className="bg-gray-50 text-gray-600">
                 <tr>
                   <th className="p-3">Meeting</th>
                   <th className="p-3">Date</th>
                   <th className="p-3">Attendance</th>
                   <th className="p-3">Status</th>
-                  <th className="p-3">Action</th>
+                  <th className="p-3">Actions</th>
                 </tr>
               </thead>
 
@@ -791,38 +974,197 @@ export default function SecretaryDashboard() {
                     </td>
 
                     <td className="p-3">{item.date}</td>
-
                     <td className="p-3">{item.attendance}</td>
 
                     <td className="p-3">
-                      <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                          item.status === "Published"
+                            ? "bg-green-100 text-green-800"
+                            : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
                         {item.status}
                       </span>
                     </td>
 
                     <td className="p-3">
-                      {item.status === "Draft" ? (
+                      <div className="flex items-center gap-3">
                         <button
                           type="button"
-                          onClick={() => publishMinutes(item.id)}
-                          className="font-medium text-green-800 hover:underline"
+                          onClick={() => setSelectedMinutes(item)}
+                          className="flex items-center gap-1 text-green-800 hover:underline"
+                          title="View minutes"
                         >
-                          Publish
+                          <Eye size={16} />
+                          View
                         </button>
-                      ) : (
-                        <span className="flex items-center gap-1 text-xs text-green-700">
-                          <Eye size={15} />
-                          Published
-                        </span>
-                      )}
+
+                        {item.status === "Draft" && (
+                          <button
+                            type="button"
+                            onClick={() => publishMinutes(item.id)}
+                            className="font-medium text-green-800 hover:underline"
+                          >
+                            Publish
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
+
+                {minutes.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan="5"
+                      className="p-5 text-center text-gray-500"
+                    >
+                      No meeting minutes saved yet.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
         </div>
       </Panel>
+
+      {selectedMeeting && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-green-950">
+                  Meeting Details
+                </h2>
+
+                <p className="mt-1 text-sm text-gray-500">
+                  {selectedMeeting.title}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedMeeting(null)}
+                className="text-gray-500 hover:text-gray-800"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-sm">
+              <p>
+                <strong>Date:</strong> {selectedMeeting.date}
+              </p>
+
+              <p>
+                <strong>Time:</strong> {selectedMeeting.time}
+              </p>
+
+              <p>
+                <strong>Venue:</strong> {selectedMeeting.venue}
+              </p>
+
+              <div>
+                <strong>Agenda:</strong>
+                <p className="mt-1 whitespace-pre-wrap text-gray-600">
+                  {selectedMeeting.agenda}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <ActionButton
+                type="button"
+                onClick={() => setSelectedMeeting(null)}
+              >
+                Close
+              </ActionButton>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedMinutes && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-green-950">
+                  Meeting Minutes
+                </h2>
+
+                <p className="mt-1 text-sm text-gray-500">
+                  {selectedMinutes.title}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedMinutes(null)}
+                className="text-gray-500 hover:text-gray-800"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-sm">
+              <p>
+                <strong>Meeting Date:</strong> {selectedMinutes.date}
+              </p>
+
+              <p>
+                <strong>Attendance:</strong> {selectedMinutes.attendance} members
+              </p>
+
+              <p>
+                <strong>Status:</strong> {selectedMinutes.status}
+              </p>
+
+              <div>
+                <strong>Minutes:</strong>
+
+                <p className="mt-2 whitespace-pre-wrap rounded-lg bg-gray-50 p-4 leading-6 text-gray-700">
+                  {selectedMinutes.content}
+                </p>
+              </div>
+
+              {selectedMinutes.attachments?.length > 0 && (
+                <div>
+                  <strong>Attachments:</strong>
+
+                  <ul className="mt-2 list-inside list-disc text-gray-600">
+                    {selectedMinutes.attachments.map((file, index) => (
+                      <li key={`${file}-${index}`}>{file}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              {selectedMinutes.status === "Draft" && (
+                <ActionButton
+                  type="button"
+                  onClick={() => publishMinutes(selectedMinutes.id)}
+                >
+                  Publish Minutes
+                </ActionButton>
+              )}
+
+              <ActionButton
+                type="button"
+                onClick={() => setSelectedMinutes(null)}
+              >
+                Close
+              </ActionButton>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+

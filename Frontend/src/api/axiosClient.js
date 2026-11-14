@@ -1,7 +1,7 @@
 
 import axios from "axios";
 
-// Backend URL
+// Backend URL 
 const axiosClient = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "http://localhost:5000/api",
   headers: {
@@ -58,11 +58,18 @@ axiosClient.interceptors.response.use(
 
   (error) => {
     const status = error.response?.status;
-    const isLoginCall = error.config?.url?.includes("/auth/login");
+    const url = error.config?.url || "";
 
-    if (status === 401 && !isLoginCall) {
+    const isPublicAuthRequest =
+      url.includes("/auth/login") ||
+      url.includes("/auth/register") ||
+      url.includes("/auth/forgot-password") ||
+      url.includes("/auth/reset-password");
+
+    if (status === 401 && !isPublicAuthRequest) {
       tokenStore.clear();
       userStore.clear();
+
       window.location.assign("/login");
     }
 
