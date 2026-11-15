@@ -78,6 +78,16 @@ def seed():
                 is_email_verified=True,
                 is_active=True,
             )
+        # Platform owner: deliberately NO membership row.
+        users["super_admin"] = User(
+            full_name="Peter Mwangi",
+            email="superadmin@summit.test",
+            password=password,
+            phone_number="254700000005",
+            role="super_admin",
+            is_email_verified=True,
+            is_active=True,
+        )
         db.session.add_all(users.values())
         db.session.flush()
 
