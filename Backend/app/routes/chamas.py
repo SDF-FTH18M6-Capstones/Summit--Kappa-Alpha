@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from marshmallow import ValidationError
 
+from app.decorators import log_audit
 from app.models import (
     Chama,
     JoinRequest,
@@ -142,6 +143,15 @@ def create_project(chama_id):
             **data
         )
         db.session.add(project)
+        db.session.flush()
+        log_audit(
+            chama_id,
+            user.id,
+            "create",
+            "projects",
+            project.id,
+            new_values=project.to_dict(),
+        )
         db.session.commit()
         return jsonify({
             "message": "Project created successfully.",
@@ -234,10 +244,20 @@ def review_join_request(req_id):
     if decision not in ("approved", "rejected"):
         return jsonify({"error": "Status must be 'approved' or 'rejected'."}), 400
 
+    old_status = join_req.status
     join_req.status = decision
     join_req.reviewed_by = user.id
     join_req.reviewed_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
+    log_audit(
+        join_req.chama_id,
+        user.id,
+        "update",
+        "join_requests",
+        join_req.id,
+        old_values={"status": old_status},
+        new_values={"status": decision},
+    )
     db.session.commit()
     return jsonify({
         "message": f"Join request {decision}.",
@@ -272,7 +292,7 @@ def list_memberships(chama_id):
 def update_membership_and_role(membership_id):
     """Allows Chama Admin to update membership status or assign user role."""
     membership = db.get_or_404(Membership, membership_id)
-    _, error = _access(membership.chama_id, admin_only=True)
+    user, error = _access(membership.chama_id, admin_only=True)
     if error:
         return error
 
@@ -283,12 +303,17 @@ def update_membership_and_role(membership_id):
     if not new_status and not new_role:
         return jsonify({"error": "Provide 'status' or 'role' to update."}), 400
 
+    old_values = {
+        "status": membership.status,
+        "role": membership.user.role if membership.user else None,
+    }
+
     if new_status:
         if new_status not in VALID_MEMBERSHIP_STATUSES:
             return jsonify({"error": f"Status must be one of: {', '.join(VALID_MEMBERSHIP_STATUSES)}"}), 400
         membership.status = new_status
         if new_status == "active" and membership.joined_at is None:
-            membership.joined_at = datetime.now(timezone.utc).date()
+            membership.joined_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     if new_role:
         if new_role not in VALID_MEMBER_ROLES:
@@ -296,6 +321,20 @@ def update_membership_and_role(membership_id):
         if membership.user:
             membership.user.role = new_role
 
+    new_values = {
+        "status": membership.status,
+        "role": membership.user.role if membership.user else None,
+    }
+
+    log_audit(
+        membership.chama_id,
+        user.id,
+        "update",
+        "memberships",
+        membership.id,
+        old_values=old_values,
+        new_values=new_values,
+    )
     db.session.commit()
     return jsonify({
         "message": "Membership updated successfully.",

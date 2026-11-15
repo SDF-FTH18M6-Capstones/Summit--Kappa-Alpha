@@ -3,10 +3,25 @@ from datetime import date, datetime, timezone
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 from marshmallow import ValidationError
-from app.models import (Chama,Contribution,ContributionType,Loan,LoanInstallment,LoanRepayment,Membership,Penalty,db,)
-from app.schemas import (ContributionSchema,ContributionTypeSchema,LoanRepaymentSchema,LoanRequestSchema,PenaltySchema,)
-from app.decorators import role_required
-from app.utils import log_audit
+from app.decorators import log_audit, role_required
+from app.models import (
+    Chama,
+    Contribution,
+    ContributionType,
+    Loan,
+    LoanInstallment,
+    LoanRepayment,
+    Membership,
+    Penalty,
+    db,
+)
+from app.schemas import (
+    ContributionSchema,
+    ContributionTypeSchema,
+    LoanRepaymentSchema,
+    LoanRequestSchema,
+    PenaltySchema,
+)
 
 finance_bp = Blueprint("finance", __name__)
 
@@ -15,6 +30,9 @@ contrib_schema = ContributionSchema()
 loan_request_schema = LoanRequestSchema()
 loan_repayment_schema = LoanRepaymentSchema()
 penalty_schema = PenaltySchema()
+
+ALL_CHAMA_ROLES = ("member", "secretary", "treasurer", "chama_admin")
+FINANCE_WRITE_ROLES = ("treasurer", "chama_admin")
 
 
 @finance_bp.errorhandler(ValidationError)
@@ -38,7 +56,7 @@ def _loan_total_repayable(loan):
 # ==========================================
 
 @finance_bp.route("/api/chamas/<int:chama_id>/contribution-types", methods=["POST"])
-@jwt_required()
+@role_required(*FINANCE_WRITE_ROLES)
 def create_contribution_type(chama_id):
     db.get_or_404(Chama, chama_id)
     data = contrib_type_schema.load(request.get_json(silent=True) or {})
@@ -58,8 +76,16 @@ def create_contribution_type(chama_id):
             penalty_amount=data.get("penalty_amount", 0.0),
         )
         db.session.add(new_type)
+        db.session.flush()
+        log_audit(
+            chama_id,
+            int(get_jwt_identity()),
+            "create",
+            "contribution_types",
+            new_type.id,
+            new_values=new_type.to_dict(),
+        )
         db.session.commit()
-        log_audit(chama_id, int(get_jwt_identity()), "CREATE", "contribution_types", new_type.id, f"Created contribution type {name}")
         return jsonify({
             "message": "Contribution type created successfully",
             "contribution_type": new_type.to_dict(),
@@ -70,8 +96,7 @@ def create_contribution_type(chama_id):
 
 
 @finance_bp.route("/api/chamas/<int:chama_id>/contribution-types", methods=["GET"])
-@jwt_required()
-@role_required("treasurer","chama_admin")
+@role_required(*ALL_CHAMA_ROLES)
 def get_contribution_types(chama_id):
     types = ContributionType.query.filter_by(chama_id=chama_id).all()
     return jsonify([t.to_dict() for t in types]), 200
@@ -82,8 +107,7 @@ def get_contribution_types(chama_id):
 # ==========================================
 
 @finance_bp.route("/api/chamas/<int:chama_id>/contributions", methods=["POST"])
-@jwt_required()
-@role_required("treasurer","chama_admin")
+@role_required(*FINANCE_WRITE_ROLES)
 def create_contribution(chama_id):
     data = contrib_schema.load(request.get_json(silent=True) or {})
 
@@ -114,8 +138,16 @@ def create_contribution(chama_id):
             notes=data.get("notes"),
         )
         db.session.add(new_contribution)
+        db.session.flush()
+        log_audit(
+            chama_id,
+            current_user_id,
+            "create",
+            "contributions",
+            new_contribution.id,
+            new_values=new_contribution.to_dict(),
+        )
         db.session.commit()
-        log_audit(chama_id, int(get_jwt_identity()), "CREATE", "contributions", new_contribution.id, f"Recorded contribution {mpesa_code}")
         return jsonify({
             "message": "Contribution recorded successfully",
             "contribution": new_contribution.to_dict(),
@@ -126,8 +158,7 @@ def create_contribution(chama_id):
 
 
 @finance_bp.route("/api/chamas/<int:chama_id>/contributions", methods=["GET"])
-@jwt_required()
-@role_required("treasurer","chama_admin")
+@role_required(*ALL_CHAMA_ROLES)
 def get_contributions(chama_id):
     membership_id = request.args.get("membership_id", type=int)
     page = request.args.get("page", 1, type=int)
@@ -153,8 +184,7 @@ def get_contributions(chama_id):
 # ==========================================
 
 @finance_bp.route("/api/chamas/<int:chama_id>/loans", methods=["POST"])
-@jwt_required()
-@role_required("member","treasurer","chama_admin")
+@role_required(*ALL_CHAMA_ROLES)
 def create_loan(chama_id):
     data = loan_request_schema.load(request.get_json(silent=True) or {})
 
@@ -172,7 +202,15 @@ def create_loan(chama_id):
             status="requested",
         )
         db.session.add(new_loan)
-        log_audit(chama_id, int(get_jwt_identity()), "CREATE", "loans", new_loan.id, f"Requested loan of {new_loan.principal}")
+        db.session.flush()
+        log_audit(
+            chama_id,
+            int(get_jwt_identity()),
+            "create",
+            "loans",
+            new_loan.id,
+            new_values=new_loan.to_dict(),
+        )
         db.session.commit()
 
         loan_dict = new_loan.to_dict()
@@ -190,8 +228,7 @@ def create_loan(chama_id):
 
 
 @finance_bp.route("/api/loans/<int:loan_id>/decision", methods=["PATCH"])
-@jwt_required()
-@role_required("treasurer","chama_admin")
+@role_required(*FINANCE_WRITE_ROLES)
 def loan_decision(loan_id):
     loan = db.session.get(Loan, loan_id)
     if loan is None:
@@ -202,6 +239,7 @@ def loan_decision(loan_id):
     if decision not in ("approved", "rejected"):
         return jsonify({"error": "Status must be 'approved' or 'rejected'"}), 400
 
+    old_status = loan.status
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     loan.status = decision
     loan.approved_by = int(get_jwt_identity())
@@ -220,14 +258,21 @@ def loan_decision(loan_id):
                 )
             )
 
+    log_audit(
+        loan.membership.chama_id,
+        int(get_jwt_identity()),
+        "update",
+        "loans",
+        loan.id,
+        old_values={"status": old_status},
+        new_values={"status": decision},
+    )
     db.session.commit()
-    log_audit(loan.membership.chama_id, int(get_jwt_identity()), "UPDATE", "loans", loan.id, f"Updated loan status to {decision}")
     return jsonify({"message": f"Loan {decision}", "loan": loan.to_dict()}), 200
 
 
 @finance_bp.route("/api/chamas/<int:chama_id>/loans", methods=["GET"])
-@jwt_required()
-@role_required("treasurer","chama_admin")
+@role_required(*ALL_CHAMA_ROLES)
 def get_chama_loans(chama_id):
     membership_id = request.args.get("membership_id", type=int)
     page = request.args.get("page", 1, type=int)
@@ -255,15 +300,13 @@ def get_chama_loans(chama_id):
 
 
 @finance_bp.route("/api/loans/<int:loan_id>/repayments", methods=["POST"])
-@jwt_required()
-@role_required("treasurer","chama_admin")
+@role_required(*FINANCE_WRITE_ROLES)
 def create_loan_repayment(loan_id):
     loan = db.session.get(Loan, loan_id)
     if loan is None:
         return jsonify({"error": "Loan not found"}), 404
 
     data = loan_repayment_schema.load(request.get_json(silent=True) or {})
-
     mpesa_code = data["mpesa_code"].strip().upper()
     if LoanRepayment.query.filter_by(mpesa_code=mpesa_code).first():
         return jsonify({"error": "Duplicate M-Pesa transaction code detected."}), 409
@@ -281,7 +324,15 @@ def create_loan_repayment(loan_id):
     total_paid = sum(float(r.amount) for r in loan.repayments)
     if total_paid >= _loan_total_repayable(loan):
         loan.status = "repaid"
-    log_audit(loan.membership.chama_id, int(get_jwt_identity()), "UPDATE", "loans", loan.id, f"Updated loan status to repaid")
+
+    log_audit(
+        loan.membership.chama_id,
+        int(get_jwt_identity()),
+        "create",
+        "loan_repayments",
+        repayment.id,
+        new_values={**repayment.to_dict(), "loan_status": loan.status},
+    )
     db.session.commit()
     return jsonify({
         "message": "Repayment recorded successfully",
@@ -290,8 +341,7 @@ def create_loan_repayment(loan_id):
 
 
 @finance_bp.route("/api/loans/<int:loan_id>/repayments", methods=["GET"])
-@jwt_required()
-@role_required("treasurer","chama_admin")
+@role_required(*ALL_CHAMA_ROLES)
 def get_loan_repayments(loan_id):
     loan = db.session.get(Loan, loan_id)
     if loan is None:
@@ -303,18 +353,12 @@ def get_loan_repayments(loan_id):
         page=page, per_page=per_page, error_out=False
     )
     return jsonify({
-        "items": [{
-            "id": r.id,
-            "loan_id": r.loan_id,
-            "amount": float(r.amount),
-            "mpesa_code": r.mpesa_code,
-            "paid_at": r.paid_at.isoformat() if r.paid_at else None,
-            "recorded_by": r.recorded_by,
-        } for r in pagination.items],
+        "items": [r.to_dict() for r in pagination.items],
         "total": pagination.total,
         "pages": pagination.pages,
         "current_page": pagination.page,
     }), 200
+
 
 @finance_bp.route("/api/loans/<int:loan_id>/installments", methods=["GET"])
 @jwt_required()
@@ -345,23 +389,23 @@ def get_financial_summary(chama_id):
         db.session.query(db.func.sum(Contribution.amount))
         .join(Membership)
         .filter(Membership.chama_id == chama_id)
-        .scalar() or 0.0
+        .scalar()
+        or 0.0
     )
-
     active_loans_count = (
         Loan.query.join(Membership)
         .filter(
             Membership.chama_id == chama_id,
-            Loan.status.in_(["approved", "disbursed"])
+            Loan.status.in_(["approved", "disbursed"]),
         )
         .count()
     )
-
     unpaid_penalties = (
         db.session.query(db.func.sum(Penalty.amount))
         .join(Membership)
         .filter(Membership.chama_id == chama_id, Penalty.status == "unpaid")
-        .scalar() or 0.0
+        .scalar()
+        or 0.0
     )
 
     return jsonify({
@@ -370,13 +414,13 @@ def get_financial_summary(chama_id):
         "unpaid_penalties": float(unpaid_penalties),
     }), 200
 
+
 # ==========================================
 # 4. PENALTIES ENDPOINTS
 # ==========================================
 
 @finance_bp.route("/api/chamas/<int:chama_id>/penalties", methods=["POST"])
-@jwt_required()
-@role_required("treasurer","chama_admin")
+@role_required(*FINANCE_WRITE_ROLES)
 def create_penalty(chama_id):
     data = penalty_schema.load(request.get_json(silent=True) or {})
     membership = db.session.get(Membership, data["membership_id"])
@@ -394,7 +438,15 @@ def create_penalty(chama_id):
             applied_by=int(get_jwt_identity()),
         )
         db.session.add(new_penalty)
-        log_audit(chama_id, int(get_jwt_identity()), "CREATE", "penalties", new_penalty.id, f"Applied penalty of {new_penalty.amount}")
+        db.session.flush()
+        log_audit(
+            chama_id,
+            int(get_jwt_identity()),
+            "create",
+            "penalties",
+            new_penalty.id,
+            new_values=new_penalty.to_dict(),
+        )
         db.session.commit()
         return jsonify({
             "message": "Penalty applied successfully",
@@ -406,8 +458,7 @@ def create_penalty(chama_id):
 
 
 @finance_bp.route("/api/chamas/<int:chama_id>/penalties", methods=["GET"])
-@jwt_required()
-@role_required("treasurer","chama_admin")
+@role_required(*ALL_CHAMA_ROLES)
 def get_chama_penalties(chama_id):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 10, type=int)
