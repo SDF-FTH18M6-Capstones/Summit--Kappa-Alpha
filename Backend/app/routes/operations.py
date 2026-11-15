@@ -7,12 +7,14 @@ from marshmallow import ValidationError
 from app import db
 from app.models import (
     Announcement,
+    Chama,
     Meeting,
     MeetingAttendance,
     MeetingMinutes,
     Membership,
     User,
 )
+from app.decorators import SUPER_ADMIN, log_audit
 from app.schemas import (
     AnnouncementSchema,
     MeetingAttendanceSchema,
@@ -64,6 +66,12 @@ def _access(chama_id, officials_only=False):
     user = db.session.get(User, int(get_jwt_identity()))
     if user is None or not user.is_active:
         return None, (jsonify({"error": "User not found or inactive"}), 401)
+
+    # super_admin manages the whole platform: no membership row needed.
+    if _val(user.role) == SUPER_ADMIN:
+        if db.session.get(Chama, chama_id) is None:
+            return None, (jsonify({"error": "Chama not found"}), 404)
+        return user, None
 
     membership = Membership.query.filter_by(user_id=user.id, chama_id=chama_id).first()
     if membership is None or _val(membership.status) != "active":
@@ -168,6 +176,9 @@ def create_meeting(chama_id):
         created_by=user.id,
     )
     db.session.add(meeting)
+    db.session.flush()  # assigns meeting.id for the audit row
+    log_audit(chama_id, user.id, "create", "meetings", meeting.id,
+              new_values=_serialize_meeting(meeting))
     db.session.commit()
     return jsonify(_serialize_meeting(meeting)), 201
 
@@ -209,6 +220,9 @@ def create_minutes(meeting_id):
         file_url=data.get("file_url"),
     )
     db.session.add(minutes)
+    db.session.flush()
+    log_audit(meeting.chama_id, user.id, "create", "meeting_minutes", minutes.id,
+              new_values={"meeting_id": meeting.id, "file_url": minutes.file_url})
     db.session.commit()
     return jsonify(_serialize_minutes(minutes)), 201
 
