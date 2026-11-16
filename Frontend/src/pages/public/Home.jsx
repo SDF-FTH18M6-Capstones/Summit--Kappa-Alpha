@@ -76,7 +76,7 @@ const Home = () => {
 
         {[
           { number: "100+", label: "Members" },
-          { number: "2020", label: "Year Founded" },
+          { number: "2026", label: "Year Founded" },
           { number: "KES 2M+", label: "Pooled to date" },
         ].map((stat) => (
           <div
