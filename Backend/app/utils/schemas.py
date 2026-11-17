@@ -70,3 +70,8 @@ class AnnouncementSchema(Schema):
     title = fields.Str(required=True, validate=validate.Length(min=3, max=200, error="Announcement title must be between 3 and 200 characters."))
     content = fields.Str(required=True, validate=validate.Length(min=3, error="Announcement content cannot be empty."))
     image_url = fields.Str(required=False, allow_none=True)
+class ChamaUpdateSchema(Schema):
+    description = fields.Str(required=False, allow_none=True, validate=validate.Length(max=2000))
+    location = fields.Str(required=False, allow_none=True, validate=validate.Length(max=150))
+    constitution = fields.Str(required=False, allow_none=True, validate=validate.Length(max=10000))
+    logo_url = fields.Str(required=False, allow_none=True)

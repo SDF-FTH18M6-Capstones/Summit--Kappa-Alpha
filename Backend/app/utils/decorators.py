@@ -5,7 +5,7 @@ from flask import g, jsonify
 from flask_jwt_extended import get_jwt_identity, verify_jwt_in_request
 
 from app import db
-from app.models import AuditLog, User
+from app.models.models import AuditLog, User, db
 
 SUPER_ADMIN = "super_admin"
 ROLES = ("super_admin", "chama_admin", "treasurer", "secretary", "member")
