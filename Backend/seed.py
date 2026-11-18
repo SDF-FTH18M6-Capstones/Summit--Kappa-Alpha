@@ -14,19 +14,28 @@ from decimal import Decimal
 from sqlalchemy import inspect
 from werkzeug.security import generate_password_hash
 
-from app import create_app, db
-from app.models import (
+from app import create_app
+from app.models.models import (
     Announcement,
+    AuditLog,
     Chama,
     Contribution,
     ContributionType,
+    EmailVerificationToken,
+    JoinRequest,
     Loan,
+    LoanInstallment,
+    LoanRepayment,
     Meeting,
+    MeetingAttendance,
     MeetingMinutes,
     Membership,
+    Penalty,
     Project,
     User,
+    db,
 )
+
 
 DEFAULT_PASSWORD = "Password123!"
 
@@ -270,6 +279,7 @@ def seed():
 
         print("Database seeded.")
         print(f"Chama id: {chama.id}   Password for every account: {DEFAULT_PASSWORD}")
+        print(f"  {'super_admin':<12} {'superadmin@summit.test':<26} (platform-wide, no membership)")
         for key, _, email, _, role, _ in PEOPLE:
             print(f"  {role:<12} {email:<26} membership id {memberships[key].id}")
 
