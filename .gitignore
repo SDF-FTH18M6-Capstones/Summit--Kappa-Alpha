@@ -1,0 +1,5 @@
+
+# Local SQLite databases
+*.db
+*.sqlite3
+instance/
