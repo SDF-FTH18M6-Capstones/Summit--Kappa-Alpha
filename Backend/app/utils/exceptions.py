@@ -3,7 +3,8 @@ Centralized Security Validators and Domain Exception Classes.
 
 Protects all services against:
   - Type-confusion / dictionary-injection payloads (e.g. {"email": {"$ne": ""}})
-  - Malformed email addresses and weak passwords
+  - Numeric-only or symbol-only person names, Chama names, and locations
+  - Invalid registration numbers, malformed email addresses, and weak passwords
   - SQL LIKE wildcard abuse (% and _)
   - Raw database exception leakage
 """
@@ -13,6 +14,10 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 PASSWORD_REGEX = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,128}$")
+PERSON_NAME_REGEX = re.compile(r"^(?=(?:.*[A-Za-z]){2,})[A-Za-z][A-Za-z\s'.-]{1,149}$")
+CHAMA_NAME_REGEX = re.compile(r"^(?=(?:.*[A-Za-z]){2,})[A-Za-z][A-Za-z\s&'.-]{2,149}$")
+ALPHA_TEXT_REGEX = re.compile(r"^(?=(?:.*[A-Za-z]){2,})[A-Za-z][A-Za-z\s&',.()-]{1,199}$")
+REG_NUMBER_REGEX = re.compile(r"^[A-Za-z0-9/-]{3,50}$")
 
 
 class AppError(Exception):
@@ -48,6 +53,51 @@ def require_str(data, field_name, label=None, required=True, max_len=255):
         raise AppError(f"{display} must not exceed {max_len} characters.", 400)
 
     return cleaned
+
+
+def validate_person_name(name_raw, label="Full name"):
+    """Ensure a person's name contains alphabets only (no numbers or symbols like '12345')."""
+    cleaned = require_str({"val": name_raw}, "val", label=label, required=True, max_len=150)
+    if not PERSON_NAME_REGEX.match(cleaned):
+        raise AppError(
+            f"{label} must contain letters only (spaces, hyphens, and apostrophes allowed) and cannot include numbers.",
+            400,
+        )
+    return " ".join(cleaned.split())
+
+
+def validate_chama_name(name_raw, label="Chama name"):
+    """Ensure a Chama name contains alphabets only (no numbers or symbols)."""
+    cleaned = require_str({"val": name_raw}, "val", label=label, required=True, max_len=150)
+    if not CHAMA_NAME_REGEX.match(cleaned):
+        raise AppError(
+            f"{label} must be 3–150 characters long and contain letters only (no numbers).",
+            400,
+        )
+    return " ".join(cleaned.split())
+
+
+def validate_alpha_text(value_raw, label="Field", required=False, max_len=150):
+    """Ensure text fields like location contain letters only (no numbers)."""
+    cleaned = require_str({"val": value_raw}, "val", label=label, required=required, max_len=max_len)
+    if cleaned is None:
+        return None
+    if not ALPHA_TEXT_REGEX.match(cleaned):
+        raise AppError(f"{label} must contain letters only and cannot include numbers.", 400)
+    return " ".join(cleaned.split())
+
+
+def validate_reg_number(value_raw, label="Registration number"):
+    """Ensure registration numbers use valid alphanumeric, hyphen, or slash characters (e.g. CHM-2026-5467)."""
+    cleaned = require_str({"val": value_raw}, "val", label=label, required=False, max_len=50)
+    if cleaned is None:
+        return None
+    if not REG_NUMBER_REGEX.match(cleaned):
+        raise AppError(
+            f"{label} must be 3–50 characters using letters, numbers, hyphens, or slashes only (e.g. CHM-2026-5467).",
+            400,
+        )
+    return cleaned.upper()
 
 
 def validate_email(email_raw):

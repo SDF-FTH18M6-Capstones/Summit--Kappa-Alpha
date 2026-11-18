@@ -19,8 +19,12 @@ from app.utils.exceptions import (
     handle_db_exception,
     require_positive_int,
     require_str,
+    validate_alpha_text,
+    validate_chama_name,
     validate_email,
     validate_password,
+    validate_person_name,
+    validate_reg_number,
 )
 from app.utils.schemas import Kenyan_Tel_Regex
 
@@ -101,14 +105,14 @@ def _attach_membership_context(user):
 
 
 def register_chama_service(data):
-    chama_name = require_str(data, "chama_name", "Chama name", required=True, max_len=150)
-    location = require_str(data, "location", "Location", required=False, max_len=150)
+    chama_name = validate_chama_name(data.get("chama_name"), "Chama name")
+    location = validate_alpha_text(data.get("location"), "Location", required=False, max_len=150)
     description = require_str(data, "description", "Description", required=False, max_len=2000)
     constitution = require_str(data, "constitution", "Constitution", required=False, max_len=10000)
-    registration_number = require_str(data, "registration_number", "Registration number", required=False, max_len=100)
+    registration_number = validate_reg_number(data.get("registration_number"), "Registration number")
     logo_url = require_str(data, "logo_url", "Logo URL", required=False, max_len=500)
 
-    full_name = require_str(data, "full_name", "Full name", required=True, max_len=150)
+    full_name = validate_person_name(data.get("full_name"), "Full name")
     email = validate_email(data.get("email"))
     raw_phone = require_str(data, "phone_number", "Phone number", required=True, max_len=20)
     phone = raw_phone.replace(" ", "")
@@ -179,7 +183,7 @@ def register_chama_service(data):
 
 def register_member_service(data):
     chama_id = require_positive_int(data.get("chama_id"), "Chama ID")
-    full_name = require_str(data, "full_name", "Full name", required=True, max_len=150)
+    full_name = validate_person_name(data.get("full_name"), "Full name")
     email = validate_email(data.get("email"))
     raw_phone = require_str(data, "phone_number", "Phone number", required=True, max_len=20)
     phone = raw_phone.replace(" ", "")
