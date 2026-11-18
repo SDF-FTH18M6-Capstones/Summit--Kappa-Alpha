@@ -10,12 +10,14 @@ import About from "./pages/public/About";
 import Officials from "./pages/public/Officials";
 import Join from "./pages/public/Join";
 import Projects from "./pages/public/Projects";
+import ChamaDetails from "./components/ChamaDetails";
 
 import Login from "./pages/auth/Login";
 import ForgotPassword from "./pages/auth/ForgotPassword";
 import SignupChoice from "./pages/auth/SignupChoice";
 import JoinChama from "./pages/auth/JoinChama";
 import RegisterChama from "./pages/auth/RegisterChama";
+import VerifyEmail from "./pages/auth/VerifyEmail";
 
 import DashboardRouter from "./routes/DashboardRouter";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -33,6 +35,7 @@ function App() {
           <Route path="/officials" element={<Officials />} />
           <Route path="/chamas" element={<Join />} />
           <Route path="/projects" element={<Projects />} />
+          <Route path="/chamas/:chamaId" element={<ChamaDetails />} />
 
           {/* Authentication pages */}
           <Route path="/login" element={<Login />} />
@@ -40,6 +43,7 @@ function App() {
           <Route path="/signup-choice" element={<SignupChoice />} />
           <Route path="/join-chama" element={<JoinChama />} />
           <Route path="/register-chama" element={<RegisterChama />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
         </Route>
 
         {/* Protected dashboard pages */}

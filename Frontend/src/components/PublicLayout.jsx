@@ -4,9 +4,7 @@ import { NavLink, Outlet, Link } from "react-router-dom";
 const navigation = [
   { name: "Home", path: "/" },
   { name: "About", path: "/about" },
-  { name: "Officials", path: "/officials" },
   { name: "Chamas", path: "/chamas" },
-  { name: "Projects", path: "/projects" },
   { name: "How to Join", path: "/#how-to-join" },
 ];
 
@@ -89,8 +87,7 @@ export default function PublicLayout() {
             <div className="mt-3 flex flex-col gap-2 text-sm text-gray-300">
               <Link to="/">Home</Link>
               <Link to="/about">About</Link>
-              <Link to="/officials">Officials</Link>
-              <Link to="/projects">Projects</Link>
+              <Link to="/#how-to-join">How to Join</Link>
               <Link to="/chamas">Chamas</Link>
             </div>
           </div>
