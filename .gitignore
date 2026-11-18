@@ -1,5 +1,8 @@
-
 # Local SQLite databases
 *.db
 *.sqlite3
 instance/
+
+# Environment secrets
+.env
+*.env
