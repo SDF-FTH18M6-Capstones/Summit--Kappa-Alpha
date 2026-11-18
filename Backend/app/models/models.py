@@ -106,13 +106,18 @@ class Membership(db.Model):
 
     def to_dict(self):
         return {
-            'id': self.id,
-            'user_id': self.user_id,
-            'chama_id': self.chama_id,
-            'member_number': self.member_number,
-            'status': self.status,
-            'joined_at': self.joined_at.isoformat()
-        }   
+            "id": self.id,
+            "user_id": self.user_id,
+            "chama_id": self.chama_id,
+            "member_number": self.member_number,
+            "status": self.status,
+            "joined_at": self.joined_at.isoformat() if self.joined_at else None,
+            "role": self.user.role if self.user else None,
+            "full_name": self.user.full_name if self.user else None,
+            "email": self.user.email if self.user else None,
+            "phone_number": self.user.phone_number if self.user else None,
+        }
+
 
 
 class JoinRequest(db.Model):
