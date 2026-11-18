@@ -1,3 +1,4 @@
+
 import {
   createContext,
   useCallback,
@@ -8,6 +9,7 @@ import {
 } from "react";
 
 import { useNavigate } from "react-router-dom";
+
 import {
   tokenStore,
   userStore,
@@ -24,9 +26,9 @@ const normalizeRole = (role) =>
     .replace(/[\s-]+/g, "_");
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() =>
-    tokenStore.get() ? userStore.get() : null
-  );
+  const [user, setUser] = useState(() => {
+    return tokenStore.get() ? userStore.get() : null;
+  });
 
   const [loading, setLoading] = useState(true);
 
@@ -39,10 +41,13 @@ export function AuthProvider({ children }) {
       const token = tokenStore.get();
 
       if (!token) {
+        userStore.clear();
+
         if (isMounted) {
           setUser(null);
           setLoading(false);
         }
+
         return;
       }
 
@@ -50,8 +55,15 @@ export function AuthProvider({ children }) {
         const response = await axiosClient.get("/auth/me");
 
         const data = response.data;
+
         const currentUser =
-          data.user ?? data.data?.user ?? data;
+          data.user ??
+          data.data?.user ??
+          data;
+
+        if (!currentUser || !currentUser.id) {
+          throw new Error("Invalid user information.");
+        }
 
         if (isMounted) {
           userStore.set(currentUser);
@@ -92,7 +104,9 @@ export function AuthProvider({ children }) {
 
       const data = response.data;
 
-      const token = data.access_token || data.token;
+      const token =
+        data.access_token ||
+        data.token;
 
       if (!token) {
         throw new Error(
@@ -101,7 +115,8 @@ export function AuthProvider({ children }) {
       }
 
       const loggedInUser =
-        data.user ?? data.data?.user;
+        data.user ??
+        data.data?.user;
 
       if (!loggedInUser) {
         throw new Error(
@@ -124,18 +139,20 @@ export function AuthProvider({ children }) {
         error.response?.data || error.message
       );
 
-      return {
-        success: false,
-        message:
-          error.response?.data?.message ||
-          error.response?.data?.error ||
-          error.message ||
-          "Unable to log in.",
-      };
+      tokenStore.clear();
+      userStore.clear();
+
+      setUser(null);
+
+      throw new Error(
+        error.response?.data?.message ||
+        error.response?.data?.error ||
+        error.message ||
+        "Unable to log in. Please try again."
+      );
     }
   }, []);
 
-  // Logout
   const logout = useCallback(async () => {
     try {
       if (tokenStore.get()) {
@@ -156,10 +173,11 @@ export function AuthProvider({ children }) {
     }
   }, [navigate]);
 
-  // Check user roles
   const hasRole = useCallback(
     (roles) => {
-      if (!roles?.length) return true;
+      if (!roles?.length) {
+        return true;
+      }
 
       const userRole = normalizeRole(
         user?.role ||
@@ -185,7 +203,13 @@ export function AuthProvider({ children }) {
       isAuthenticated: Boolean(user),
       hasRole,
     }),
-    [user, loading, login, logout, hasRole]
+    [
+      user,
+      loading,
+      login,
+      logout,
+      hasRole,
+    ]
   );
 
   return (
@@ -206,6 +230,5 @@ export function useAuth() {
 
   return context;
 }
-
 
 
