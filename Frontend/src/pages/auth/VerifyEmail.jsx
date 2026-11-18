@@ -36,8 +36,9 @@ export default function VerifyEmail() {
         setStatus("loading");
 
         const response = await axiosClient.get(
-          `/auth/verify-email/${encodeURIComponent(token)}`,
+          `/auth/verify-email`,
           {
+            params: { token },
             signal: controller.signal,
           }
         );
@@ -48,9 +49,11 @@ export default function VerifyEmail() {
           response.data.message ||
           "Your email has been successfully verified."
         );
-
       } catch (error) {
-        if (error.name === "CanceledError") {
+        if (
+          error.name === "CanceledError" ||
+          error.code === "ERR_CANCELED"
+        ) {
           return;
         }
 
@@ -58,6 +61,7 @@ export default function VerifyEmail() {
 
         setMessage(
           error.response?.data?.message ||
+          error.response?.data?.error ||
           (error.request
             ? "Unable to connect to the server. Please try again."
             : "Email verification failed. Your link may be invalid or expired.")
@@ -70,16 +74,12 @@ export default function VerifyEmail() {
     return () => {
       controller.abort();
     };
-
   }, [token]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
-
       <div className="bg-white w-full max-w-md rounded-2xl shadow-lg p-8 text-center">
-
         <div className="flex justify-center mb-5">
-
           {status === "loading" && (
             <Loader2 className="w-16 h-16 text-green-700 animate-spin" />
           )}
@@ -91,17 +91,12 @@ export default function VerifyEmail() {
           {status === "error" && (
             <XCircle className="w-16 h-16 text-red-500" />
           )}
-
         </div>
 
         <h1 className="text-2xl font-bold text-gray-800 mb-3">
-
           {status === "loading" && "Verifying Email"}
-
           {status === "success" && "Email Verified!"}
-
           {status === "error" && "Verification Failed"}
-
         </h1>
 
         <p className="text-gray-600 mb-6">
@@ -132,11 +127,9 @@ export default function VerifyEmail() {
             Back to Login
           </Link>
         )}
-
       </div>
     </div>
   );
 }
-
 
 
