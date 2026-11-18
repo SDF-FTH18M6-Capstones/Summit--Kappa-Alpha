@@ -7,7 +7,7 @@ from werkzeug.security import generate_password_hash
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"  # set before create_app()
 
 from app import create_app, db  # noqa: E402
-from app.models import AuditLog, Chama, Membership, User  # noqa: E402
+from app.models.models import AuditLog, Chama, Membership, User  # noqa: E402
 
 MEETING = {"title": "December Meeting", "meeting_date": "2026-12-05T10:00:00Z"}
 
@@ -72,7 +72,7 @@ def make_meeting(client, w, title="December Meeting"):
     body = {**MEETING, "title": title}
     r = client.post(f"/api/chamas/{w['chama']}/meetings", headers=auth(w["sec"]), json=body)
     assert r.status_code == 201
-    return r.get_json()["id"]
+    return r.get_json()["meeting"]["id"]
 
 
 # ---- meetings -------------------------------------------------------------
@@ -80,7 +80,7 @@ def make_meeting(client, w, title="December Meeting"):
 def test_secretary_can_schedule_meeting(client, world):
     r = client.post(f"/api/chamas/{world['chama']}/meetings", headers=auth(world["sec"]), json=MEETING)
     assert r.status_code == 201
-    assert r.get_json()["title"] == "December Meeting"
+    assert r.get_json()["meeting"]["title"] == "December Meeting"
 
 
 def test_member_cannot_schedule_meeting(client, world):
@@ -105,8 +105,8 @@ def test_member_of_another_chama_is_blocked(client, world):
 
 
 def test_meetings_are_paginated(client, world):
-    for i in range(3):
-        make_meeting(client, world, title=f"Meeting {i}")
+    for name in ("Alpha", "Beta", "Gamma"):
+        make_meeting(client, world, title=f"Meeting {name}")
     r = client.get(f"/api/chamas/{world['chama']}/meetings?per_page=2", headers=auth(world["mem"]))
     data = r.get_json()
     assert r.status_code == 200
@@ -166,8 +166,8 @@ def test_attendance_for_member_of_other_chama_is_400(client, world):
 
 def test_announcements_create_and_paginate(client, world):
     url = f"/api/chamas/{world['chama']}/announcements"
-    for i in range(3):
-        r = client.post(url, headers=auth(world["sec"]), json={"title": f"Notice {i}", "content": "Pay by the 5th."})
+    for name in ("Alpha", "Beta", "Gamma"):
+        r = client.post(url, headers=auth(world["sec"]), json={"title": f"Notice {name}", "content": "Pay by the 5th."})
         assert r.status_code == 201
     assert client.post(url, headers=auth(world["mem"]), json={"title": "Nope", "content": "Nope"}).status_code == 403
     data = client.get(url + "?per_page=1", headers=auth(world["mem"])).get_json()
@@ -177,16 +177,35 @@ def test_announcements_create_and_paginate(client, world):
 # ---- RBAC branch only (skipped until app/decorators.py exists) -------------
 
 def test_super_admin_reads_any_chama_without_membership(client, world):
-    pytest.importorskip("app.decorators")
+    pytest.importorskip("app.utils.decorators")
     assert client.get(f"/api/chamas/{world['chama']}/meetings", headers=auth(world["super"])).status_code == 200
     assert client.get("/api/chamas/999/meetings", headers=auth(world["super"])).status_code == 404
 
 
 def test_audit_rows_are_written_only_for_successful_actions(client, world):
-    pytest.importorskip("app.decorators")
+    pytest.importorskip("app.utils.decorators")
     client.post(f"/api/chamas/{world['chama']}/meetings", headers=auth(world["mem"]), json=MEETING)  # 403
     assert AuditLog.query.count() == 0
     mid = make_meeting(client, world)
     client.post(f"/api/meetings/{mid}/minutes", headers=auth(world["sec"]), json={"minutes": "Plans agreed."})
     tables = [a.table_name for a in AuditLog.query.order_by(AuditLog.id)]
     assert tables == ["meetings", "meeting_minutes"]
+
+
+def test_titles_with_numbers_are_rejected(client, world):
+    # Current team rule (schemas.py ALPHA_ONLY_REGEX): letters only in titles.
+    r = client.post(f"/api/chamas/{world['chama']}/meetings", headers=auth(world["sec"]),
+                    json={**MEETING, "title": "Meeting 2"})
+    assert r.status_code == 400
+    assert "title" in r.get_json()["errors"]
+
+
+def test_announcements_and_attendance_are_audited(client, world):
+    pytest.importorskip("app.utils.decorators")
+    mid = make_meeting(client, world)
+    client.post(f"/api/chamas/{world['chama']}/announcements", headers=auth(world["sec"]),
+                json={"title": "Notice Alpha", "content": "Pay by the 5th."})
+    client.post(f"/api/meetings/{mid}/attendance", headers=auth(world["sec"]),
+                json={"membership_id": world["m_mem"], "status": "present"})
+    tables = [a.table_name for a in AuditLog.query.order_by(AuditLog.id)]
+    assert tables == ["meetings", "announcements", "meeting_attendance"]
