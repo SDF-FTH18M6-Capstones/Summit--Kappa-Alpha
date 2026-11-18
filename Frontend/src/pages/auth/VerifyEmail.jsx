@@ -1,60 +1,85 @@
 
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+
 import {
   CheckCircle,
   XCircle,
   Loader2,
   Mail,
 } from "lucide-react";
+
 import axiosClient from "../../api/axiosClient";
 
 export default function VerifyEmail() {
   const [searchParams] = useSearchParams();
 
+  const token = searchParams.get("token");
+
   const [status, setStatus] = useState("loading");
+
   const [message, setMessage] = useState(
     "Please wait while we verify your email address."
   );
 
   useEffect(() => {
-    const token = searchParams.get("token");
-
     if (!token) {
       setStatus("error");
       setMessage("Verification token is missing.");
       return;
     }
 
+    const controller = new AbortController();
+
     const verifyEmail = async () => {
       try {
+        setStatus("loading");
+
         const response = await axiosClient.get(
-          `/auth/verify-email/${encodeURIComponent(token)}`
+          `/auth/verify-email/${encodeURIComponent(token)}`,
+          {
+            signal: controller.signal,
+          }
         );
 
         setStatus("success");
+
         setMessage(
           response.data.message ||
           "Your email has been successfully verified."
         );
+
       } catch (error) {
+        if (error.name === "CanceledError") {
+          return;
+        }
+
         setStatus("error");
 
         setMessage(
           error.response?.data?.message ||
-          "Email verification failed. Your link may be invalid or expired."
+          (error.request
+            ? "Unable to connect to the server. Please try again."
+            : "Email verification failed. Your link may be invalid or expired.")
         );
       }
     };
 
     verifyEmail();
-  }, [searchParams]);
+
+    return () => {
+      controller.abort();
+    };
+
+  }, [token]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 px-4">
+
       <div className="bg-white w-full max-w-md rounded-2xl shadow-lg p-8 text-center">
 
         <div className="flex justify-center mb-5">
+
           {status === "loading" && (
             <Loader2 className="w-16 h-16 text-green-700 animate-spin" />
           )}
@@ -66,12 +91,17 @@ export default function VerifyEmail() {
           {status === "error" && (
             <XCircle className="w-16 h-16 text-red-500" />
           )}
+
         </div>
 
         <h1 className="text-2xl font-bold text-gray-800 mb-3">
+
           {status === "loading" && "Verifying Email"}
+
           {status === "success" && "Email Verified!"}
+
           {status === "error" && "Verification Failed"}
+
         </h1>
 
         <p className="text-gray-600 mb-6">
@@ -107,4 +137,6 @@ export default function VerifyEmail() {
     </div>
   );
 }
+
+
 

@@ -137,7 +137,7 @@ export default function Login() {
                   onChange={handleChange}
                   placeholder="Enter your email"
                   className={inputClass}
-                  autoComplete="email"
+                  autoComplete="off"
                   disabled={loading}
                   required
                 />
@@ -167,7 +167,7 @@ export default function Login() {
                   onChange={handleChange}
                   placeholder="Enter your password"
                   className={`${inputClass} pr-12`}
-                  autoComplete="current-password"
+                  autoComplete="new-password"
                   disabled={loading}
                   required
                 />

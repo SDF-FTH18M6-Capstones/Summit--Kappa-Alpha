@@ -1,7 +1,6 @@
 
 import axios from "axios";
 
-// Backend URL 
 const axiosClient = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "http://localhost:5000/api",
   headers: {
@@ -10,11 +9,9 @@ const axiosClient = axios.create({
   timeout: 15000,
 });
 
-// Storage keys
 const TOKEN_KEY = "summit_access_token";
 const USER_KEY = "user";
 
-// Token storage
 export const tokenStore = {
   get: () => localStorage.getItem(TOKEN_KEY),
 
@@ -23,7 +20,6 @@ export const tokenStore = {
   clear: () => localStorage.removeItem(TOKEN_KEY),
 };
 
-// User storage
 export const userStore = {
   get: () => {
     try {
@@ -41,18 +37,20 @@ export const userStore = {
   clear: () => localStorage.removeItem(USER_KEY),
 };
 
-// Attach JWT to requests
-axiosClient.interceptors.request.use((config) => {
-  const token = tokenStore.get();
+axiosClient.interceptors.request.use(
+  (config) => {
+    const token = tokenStore.get();
 
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
+    if (token) {
+      config.headers = config.headers || {};
+      config.headers.Authorization = `Bearer ${token}`;
+    }
 
-  return config;
-});
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
-// Handle authentication errors
 axiosClient.interceptors.response.use(
   (response) => response,
 
@@ -69,15 +67,12 @@ axiosClient.interceptors.response.use(
     if (status === 401 && !isPublicAuthRequest) {
       tokenStore.clear();
       userStore.clear();
-
-      window.location.assign("/login");
     }
 
     return Promise.reject(error);
   }
 );
 
-// Readable API error messages
 export const getErrorMessage = (error) =>
   error.response?.data?.message ||
   error.response?.data?.error ||
