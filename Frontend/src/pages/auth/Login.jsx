@@ -36,20 +36,46 @@ export default function Login() {
   };
 
   const handleSubmit = async (event) => {
+    // Prevent the browser's default form submission
     event.preventDefault();
+
+    console.log("================================");
+    console.log("LOGIN BUTTON CLICKED");
+    console.log("Form submission prevented.");
+    console.log("Email entered:", formData.email);
+    console.log("================================");
 
     setError("");
     setLoading(true);
 
     try {
-      await login(formData.email, formData.password);
+      console.log("Sending login request to Flask backend...");
+
+      const result = await login(
+        formData.email.trim(),
+        formData.password
+      );
+
+      console.log("LOGIN SUCCESSFUL!");
+      console.log("Authenticated user:", result.user);
+      console.log("Preparing to navigate to dashboard...");
 
       navigate("/dashboard", { replace: true });
+
+      console.log("Navigation to dashboard triggered.");
+
     } catch (error) {
-      console.error("Login error:", error);
-      setError(error.message || "Login failed. Please try again.");
+      console.error("LOGIN FAILED!");
+      console.error("Error message:", error.message);
+      console.error("Full login error:", error);
+
+      setError(
+        error.message || "Login failed. Please try again."
+      );
+
     } finally {
       setLoading(false);
+      console.log("Login request completed.");
     }
   };
 
@@ -137,7 +163,7 @@ export default function Login() {
                   onChange={handleChange}
                   placeholder="Enter your email"
                   className={inputClass}
-                  autoComplete="email"
+                  autoComplete="username"
                   disabled={loading}
                   required
                 />

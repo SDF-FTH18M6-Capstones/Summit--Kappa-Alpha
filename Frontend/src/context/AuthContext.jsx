@@ -1,3 +1,4 @@
+
 import {
   createContext,
   useCallback,
@@ -8,6 +9,7 @@ import {
 } from "react";
 
 import { useNavigate } from "react-router-dom";
+
 import {
   tokenStore,
   userStore,
@@ -23,10 +25,51 @@ const normalizeRole = (role) =>
     .toLowerCase()
     .replace(/[\s-]+/g, "_");
 
-export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() =>
-    tokenStore.get() ? userStore.get() : null
+const getUserFromResponse = (data) => {
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+
+  const user =
+    data.user ??
+    data.data?.user ??
+    data.data ??
+    null;
+
+  if (!user || typeof user !== "object" || Array.isArray(user)) {
+    return null;
+  }
+
+  return user;
+};
+
+const getTokenFromResponse = (data) => {
+  return (
+    data?.access_token ??
+    data?.accessToken ??
+    data?.token ??
+    data?.data?.access_token ??
+    data?.data?.accessToken ??
+    data?.data?.token ??
+    null
   );
+};
+
+const getErrorMessage = (error, fallback) => {
+  return (
+    error.response?.data?.message ||
+    error.response?.data?.error ||
+    error.response?.data?.msg ||
+    error.message ||
+    fallback
+  );
+};
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(() => {
+    const token = tokenStore.get();
+    return token ? userStore.get() : null;
+  });
 
   const [loading, setLoading] = useState(true);
 
@@ -39,19 +82,26 @@ export function AuthProvider({ children }) {
       const token = tokenStore.get();
 
       if (!token) {
+        userStore.clear();
+
         if (isMounted) {
           setUser(null);
           setLoading(false);
         }
+
         return;
       }
 
       try {
         const response = await axiosClient.get("/auth/me");
 
-        const data = response.data;
-        const currentUser =
-          data.user ?? data.data?.user ?? data;
+        const currentUser = getUserFromResponse(response.data);
+
+        if (!currentUser) {
+          throw new Error(
+            "The server did not return valid user information."
+          );
+        }
 
         if (isMounted) {
           userStore.set(currentUser);
@@ -92,7 +142,8 @@ export function AuthProvider({ children }) {
 
       const data = response.data;
 
-      const token = data.access_token || data.token;
+      const token = getTokenFromResponse(data);
+      const loggedInUser = getUserFromResponse(data);
 
       if (!token) {
         throw new Error(
@@ -100,12 +151,9 @@ export function AuthProvider({ children }) {
         );
       }
 
-      const loggedInUser =
-        data.user ?? data.data?.user;
-
       if (!loggedInUser) {
         throw new Error(
-          "The backend did not return user details."
+          "The backend did not return user information."
         );
       }
 
@@ -124,18 +172,17 @@ export function AuthProvider({ children }) {
         error.response?.data || error.message
       );
 
-      return {
-        success: false,
-        message:
-          error.response?.data?.message ||
-          error.response?.data?.error ||
-          error.message ||
-          "Unable to log in.",
-      };
+      tokenStore.clear();
+      userStore.clear();
+
+      setUser(null);
+
+      throw new Error(
+        getErrorMessage(error, "Unable to log in. Please try again.")
+      );
     }
   }, []);
 
-  // Logout
   const logout = useCallback(async () => {
     try {
       if (tokenStore.get()) {
@@ -156,10 +203,11 @@ export function AuthProvider({ children }) {
     }
   }, [navigate]);
 
-  // Check user roles
   const hasRole = useCallback(
     (roles) => {
-      if (!roles?.length) return true;
+      if (!roles?.length) {
+        return true;
+      }
 
       const userRole = normalizeRole(
         user?.role ||
@@ -182,10 +230,16 @@ export function AuthProvider({ children }) {
       loading,
       login,
       logout,
-      isAuthenticated: Boolean(user),
+      isAuthenticated: Boolean(user && tokenStore.get()),
       hasRole,
     }),
-    [user, loading, login, logout, hasRole]
+    [
+      user,
+      loading,
+      login,
+      logout,
+      hasRole,
+    ]
   );
 
   return (
@@ -206,6 +260,5 @@ export function useAuth() {
 
   return context;
 }
-
 
 

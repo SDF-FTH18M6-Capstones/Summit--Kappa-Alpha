@@ -1,86 +1,88 @@
+ 
+import React from "react";
 
-const projects = [
-  {
-    title: "Land Investment",
-    description: "Collective investment in land and property development.",
-    status: "Ongoing",
-    icon: "Public/Icons/Land_Investment.jpg"
-  },
-  {
-    title: "Agricultural Investment",
-    description: "Supporting agricultural activities and farming opportunities.",
-    status: "Ongoing",
-    icon: "Public/Icons/Agricultural_Investment.jpg"
-  },
-  {
-    title: "Community Development",
-    description: "Investing in initiatives that improve our community.",
-    status: "Planned",
-    icon: "Public/Icons/Community_Development.webp"
-  }
-];
+const Projects = ({ projects = [] }) => {
+  const getStatusStyle = (status) => {
+    switch (status?.toLowerCase()) {
+      case "ongoing":
+        return "bg-blue-100 text-blue-700";
 
-function Projects() {
+      case "planned":
+        return "bg-orange-100 text-orange-700";
+
+      case "completed":
+        return "bg-green-100 text-green-700";
+
+      default:
+        return "bg-gray-100 text-gray-600";
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-white">
-
-      <section className="bg-[#123B32] text-white py-20 px-6 text-center">
-        <h1 className="text-4xl font-bold mb-4">
-          Our Projects
-        </h1>
-
-        <p className="text-gray-200 max-w-2xl mx-auto">
-          Discover the investment opportunities and development
-          projects that bring our members together.
+    <section className="py-10">
+      <div className="mb-8">
+        <p className="font-semibold uppercase tracking-wider text-[#1F6B49]">
+          Growth and development
         </p>
-      </section>
 
-      <section className="py-16 px-8 md:px-20 bg-gray-50">
+        <h2 className="mt-3 text-3xl font-extrabold text-[#123D2B]">
+          Our Projects
+        </h2>
 
-        <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-          {projects.map((project, index) => (
-            <div
-              key={index}
-              className="bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100"
+        <p className="mt-3 text-gray-600">
+          Explore the projects and investments belonging to this chama.
+        </p>
+      </div>
+
+      {projects.length > 0 ? (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {projects.map((project) => (
+            <article
+              key={project.id}
+              className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
             >
-              <div className="h-48 flex items-center justify-center">
-                <span className="text-7xl">
-                  <img
-                  src={project.icon}
-                  alt={project.title}
-                  className="w-60 h-80 object-contain rounded-2xl"
-                  />
-                </span>
-              </div>
+              {project.image && (
+                <img
+                  src={project.image}
+                  alt={project.name}
+                  className="h-52 w-full object-cover"
+                />
+              )}
 
               <div className="p-6">
-                <div className="flex justify-between items-center mb-4">
-                  <span className="text-sm font-semibold text-green-800">
-                    {project.status}
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${getStatusStyle(
+                      project.status
+                    )}`}
+                  >
+                    {project.status || "Status unavailable"}
                   </span>
                 </div>
 
-                <h2 className="text-xl font-bold text-[#123B32] mb-3">
-                  {project.title}
-                </h2>
+                <h3 className="text-xl font-bold text-[#123D2B]">
+                  {project.name}
+                </h3>
 
-                <p className="text-gray-600 leading-relaxed">
+                <p className="mt-3 leading-6 text-gray-600">
                   {project.description}
                 </p>
-
               </div>
-            </div>
+            </article>
           ))}
-
         </div>
-      </section>
-
-    </div>
+      ) : (
+        <div className="rounded-xl bg-[#F3F5F3] p-8 text-center">
+          <p className="text-gray-600">
+            No projects have been added to this chama yet.
+          </p>
+        </div>
+      )}
+    </section>
   );
-}
+};
 
 export default Projects;
-
 
 
 

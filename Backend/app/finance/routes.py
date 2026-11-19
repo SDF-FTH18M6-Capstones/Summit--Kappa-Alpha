@@ -20,7 +20,9 @@ from app.finance.services import (
     get_loan_installments_service,
     get_loan_repayments_service,
     loan_decision_service,
+    pay_penalty_service,
 )
+
 from app.utils.decorators import role_required
 from app.utils.exceptions import AppError
 from app.utils.schemas import (
@@ -110,6 +112,7 @@ def get_chama_loans(chama_id):
         chama_id=chama_id,
         user=g.current_user,
         membership_id=request.args.get("membership_id", type=int),
+        status_filter=request.args.get("status", type=str),
         page=request.args.get("page", 1, type=int),
         per_page=request.args.get("per_page", 10, type=int),
     )
@@ -161,7 +164,14 @@ def get_chama_penalties(chama_id):
         chama_id=chama_id,
         user=g.current_user,
         membership_id=request.args.get("membership_id", type=int),
+        status_filter=request.args.get("status", type=str),
         page=request.args.get("page", 1, type=int),
         per_page=request.args.get("per_page", 10, type=int),
     )
     return jsonify(result), 200
+
+
+@finance_bp.route("/api/penalties/<int:penalty_id>/pay", methods=["PATCH"])
+@role_required(*FINANCE_WRITE_ROLES)
+def pay_penalty(penalty_id):
+    return jsonify(pay_penalty_service(penalty_id, g.current_user)), 200

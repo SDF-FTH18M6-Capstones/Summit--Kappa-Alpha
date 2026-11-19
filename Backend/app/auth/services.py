@@ -293,13 +293,24 @@ def login_service(data):
         raise AppError("Your account has been deactivated. Please contact your Chama Admin or platform support.", 403)
     if not user.is_email_verified:
         raise AppError("Your email address has not been verified yet. Please check your inbox for the verification link.", 403)
+
     user_payload = _attach_membership_context(user)
+    if user.role != "super_admin":
+        mem_status = user_payload.get("membership_status")
+        if mem_status == "pending":
+            raise AppError("Your membership request is still awaiting Chama Admin approval. You will be notified by email once approved.", 403)
+        if mem_status == "rejected":
+            raise AppError("Your membership request to join this Chama was declined by the administrator.", 403)
+        if mem_status in ("suspended", "exited"):
+            raise AppError("Your Chama membership is currently suspended or inactive. Please contact your Chama Admin.", 403)
+
     return {
         "message": "Login successful.",
         "access_token": create_access_token(identity=str(user.id)),
         "refresh_token": create_refresh_token(identity=str(user.id)),
         "user": user_payload,
     }
+
 
 
 def refresh_token_service(user_id):
@@ -318,7 +329,6 @@ def get_current_user_service(user_id):
         raise AppError("Authenticated user account was not found or is inactive.", 404)
     return {"user": _attach_membership_context(user)}
 
-
 def forgot_password_service(data):
     email = validate_email(data.get("email"))
     try:
@@ -336,9 +346,9 @@ def forgot_password_service(data):
             frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
             reset_link = f"{frontend_url}/reset-password?token={token_str}"
             html_body = (
-                f"Hello {user.full_name},"
-                "Click the link below to reset your Summit Chama password (expires in 1 hour):"
-                f"{reset_link}"
+                f"<p>Hello <strong>{user.full_name}</strong>,</p>"
+                "<p>Click the link below to reset your Summit Chama password (expires in 1 hour):</p>"
+                f"<p><a href='{reset_link}'>{reset_link}</a></p>"
             )
             _send_email(user.email, "Reset Your Summit Chama Password", html_body)
         return {
@@ -346,7 +356,6 @@ def forgot_password_service(data):
         }
     except Exception as exc:
         handle_db_exception(db, exc, "We could not process your password reset request. Please try again.")
-
 
 def reset_password_service(data):
     token_str = require_str(data, "token", "Password reset token", required=True, max_len=255)

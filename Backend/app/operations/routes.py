@@ -10,12 +10,16 @@ from app.operations.services import (
     create_announcement_service,
     create_meeting_service,
     create_minutes_service,
+    delete_announcement_service,
+    delete_meeting_service,
     get_attendance_service,
     get_minutes_service,
     list_announcements_service,
+    list_chama_minutes_service,
     list_meetings_service,
     record_attendance_service,
 )
+
 from app.utils.decorators import role_required
 from app.utils.exceptions import AppError
 
@@ -100,3 +104,25 @@ def list_announcements(chama_id):
         per_page=request.args.get("per_page", 20, type=int),
     )
     return jsonify(result), 200
+@operations_bp.route("/chamas/<int:chama_id>/minutes", methods=["GET"])
+@role_required(*ALL_CHAMA_ROLES)
+def list_chama_minutes(chama_id):
+    result = list_chama_minutes_service(
+        chama_id=chama_id,
+        user=g.current_user,
+        page=request.args.get("page", 1, type=int),
+        per_page=request.args.get("per_page", 20, type=int),
+    )
+    return jsonify(result), 200
+
+
+@operations_bp.route("/meetings/<int:meeting_id>", methods=["DELETE"])
+@role_required(*OPERATIONS_WRITE_ROLES)
+def delete_meeting(meeting_id):
+    return jsonify(delete_meeting_service(meeting_id, g.current_user)), 200
+
+
+@operations_bp.route("/announcements/<int:announcement_id>", methods=["DELETE"])
+@role_required(*OPERATIONS_WRITE_ROLES)
+def delete_announcement(announcement_id):
+    return jsonify(delete_announcement_service(announcement_id, g.current_user)), 200

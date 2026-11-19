@@ -1,29 +1,27 @@
 
 import axios from "axios";
 
-// Backend URL 
+const API_URL =
+  import.meta.env.VITE_API_URL?.trim() ||
+  "http://localhost:5000/api";
+
 const axiosClient = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "http://localhost:5000/api",
+  baseURL: API_URL.replace(/\/+$/, ""),
   headers: {
     "Content-Type": "application/json",
   },
   timeout: 15000,
 });
 
-// Storage keys
 const TOKEN_KEY = "summit_access_token";
 const USER_KEY = "user";
 
-// Token storage
 export const tokenStore = {
   get: () => localStorage.getItem(TOKEN_KEY),
-
   set: (token) => localStorage.setItem(TOKEN_KEY, token),
-
   clear: () => localStorage.removeItem(TOKEN_KEY),
 };
 
-// User storage
 export const userStore = {
   get: () => {
     try {
@@ -34,28 +32,28 @@ export const userStore = {
     }
   },
 
-  set: (user) => {
-    localStorage.setItem(USER_KEY, JSON.stringify(user));
-  },
+  set: (user) =>
+    localStorage.setItem(USER_KEY, JSON.stringify(user)),
 
   clear: () => localStorage.removeItem(USER_KEY),
 };
 
-// Attach JWT to requests
-axiosClient.interceptors.request.use((config) => {
-  const token = tokenStore.get();
+axiosClient.interceptors.request.use(
+  (config) => {
+    const token = tokenStore.get();
 
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
+    if (token) {
+      config.headers = config.headers || {};
+      config.headers.Authorization = `Bearer ${token}`;
+    }
 
-  return config;
-});
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
-// Handle authentication errors
 axiosClient.interceptors.response.use(
   (response) => response,
-
   (error) => {
     const status = error.response?.status;
     const url = error.config?.url || "";
@@ -63,27 +61,35 @@ axiosClient.interceptors.response.use(
     const isPublicAuthRequest =
       url.includes("/auth/login") ||
       url.includes("/auth/register") ||
+      url.includes("/auth/verify-email") ||
+      url.includes("/auth/resend-verification") ||
       url.includes("/auth/forgot-password") ||
       url.includes("/auth/reset-password");
 
     if (status === 401 && !isPublicAuthRequest) {
       tokenStore.clear();
       userStore.clear();
-
-      window.location.assign("/login");
     }
 
     return Promise.reject(error);
   }
 );
 
-// Readable API error messages
-export const getErrorMessage = (error) =>
-  error.response?.data?.message ||
-  error.response?.data?.error ||
-  (error.request
-    ? "Cannot reach the server. Check your connection."
-    : error.message);
+export const getErrorMessage = (error) => {
+  if (error.response) {
+    return (
+      error.response.data?.message ||
+      error.response.data?.error ||
+      `Request failed with status ${error.response.status}.`
+    );
+  }
+
+  if (error.request) {
+    return "Cannot reach the server. Check that Flask is running and the API URL is correct.";
+  }
+
+  return error.message || "An unexpected error occurred.";
+};
 
 export default axiosClient;
 
