@@ -309,3 +309,57 @@ def list_announcements_service(chama_id, user, page=1, per_page=20):
     _assert_active_member(user, chama_id)
     query = Announcement.query.filter_by(chama_id=chama_id).order_by(Announcement.created_at.desc())
     return _paginate_query(query, _serialize_announcement, page, per_page)
+def list_chama_minutes_service(chama_id, user, page=1, per_page=20):
+    _assert_chama_exists(chama_id)
+    _assert_active_member(user, chama_id)
+    safe_page = max(int(page or 1), 1)
+    safe_per_page = min(max(int(per_page or 20), 1), MAX_PER_PAGE)
+    query = (
+        db.session.query(MeetingMinutes, Meeting)
+        .join(Meeting, MeetingMinutes.meeting_id == Meeting.id)
+        .filter(Meeting.chama_id == chama_id)
+        .order_by(MeetingMinutes.created_at.desc())
+    )
+    pagination = query.paginate(page=safe_page, per_page=safe_per_page, error_out=False)
+    items = []
+    for minutes_row, meeting in pagination.items:
+        item = _serialize_minutes(minutes_row)
+        item["meeting_title"] = meeting.title
+        item["meeting_date"] = _iso(meeting.meeting_date)
+        item["attendance_count"] = len(meeting.attendance)
+        items.append(item)
+    return {
+        "items": items,
+        "page": pagination.page,
+        "per_page": pagination.per_page,
+        "total": pagination.total,
+        "pages": pagination.pages,
+    }
+
+
+def delete_meeting_service(meeting_id, user):
+    meeting = _get_meeting_or_raise(meeting_id)
+    _assert_active_member(user, meeting.chama_id)
+    try:
+        snapshot = _serialize_meeting(meeting)
+        log_audit(meeting.chama_id, user.id, "delete", "meetings", meeting.id, old_values=snapshot)
+        db.session.delete(meeting)
+        db.session.commit()
+        return {"message": "Meeting deleted successfully."}
+    except Exception as exc:
+        handle_db_exception(db, exc, "We could not delete the meeting. Please try again.")
+
+
+def delete_announcement_service(announcement_id, user):
+    announcement = db.session.get(Announcement, announcement_id)
+    if announcement is None:
+        raise AppError(f"Announcement with ID {announcement_id} was not found.", 404)
+    _assert_active_member(user, announcement.chama_id)
+    try:
+        snapshot = _serialize_announcement(announcement)
+        log_audit(announcement.chama_id, user.id, "delete", "announcements", announcement.id, old_values=snapshot)
+        db.session.delete(announcement)
+        db.session.commit()
+        return {"message": "Announcement deleted successfully."}
+    except Exception as exc:
+        handle_db_exception(db, exc, "We could not delete the announcement. Please try again.")

@@ -6,19 +6,6 @@ HAS_LETTERS_REGEX = r"^(?=(?:.*[A-Za-z]){2,}).+$"
 MPESA_CODE_REGEX = r"^[A-Za-z0-9]{10}$"
 
 
-class JoinRequestSchema(Schema):
-    full_name = fields.Str(
-        required=True,
-        validate=[
-            validate.Length(min=3, max=150, error="Full name must be between 3 and 150 characters."),
-            validate.Regexp(ALPHA_ONLY_REGEX, error="Full name must contain letters only and cannot include numbers."),
-        ],
-    )
-    email = fields.Email(required=True, error_messages={"invalid": "Please enter a valid email address."})
-    phone_number = fields.Str(required=True, validate=validate.Regexp(Kenyan_Tel_Regex, error="Phone number must use format 2547XXXXXXXX or 07XXXXXXXX."))
-    message = fields.Str(required=False, allow_none=True)
-
-
 class ProjectSchema(Schema):
     title = fields.Str(
         required=True,
@@ -147,3 +134,14 @@ class ChamaUpdateSchema(Schema):
     )
     constitution = fields.Str(required=False, allow_none=True, validate=validate.Length(max=10000))
     logo_url = fields.Str(required=False, allow_none=True)
+    default_interest_rate = fields.Float(
+        required=False,
+        allow_none=True,
+        validate=validate.Range(min=0, max=100, error="Interest rate must be between 0% and 100%."),
+    )
+    max_loan_amount = fields.Float(
+        required=False,
+        allow_none=True,
+        validate=validate.Range(min=500, error="Maximum loan amount must be at least KES 500."),
+    )
+

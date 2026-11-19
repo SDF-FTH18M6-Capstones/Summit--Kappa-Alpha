@@ -10,7 +10,6 @@ from app.auth.services import _send_email
 from app.models.models import (
     AuditLog,
     Chama,
-    JoinRequest,
     Membership,
     Project,
     User,
@@ -26,7 +25,8 @@ from app.utils.exceptions import (
 )
 
 VALID_MEMBER_ROLES = ("chama_admin", "treasurer", "secretary", "member")
-VALID_MEMBERSHIP_STATUSES = ("pending", "active", "suspended", "exited")
+VALID_MEMBERSHIP_STATUSES = ("pending", "active", "suspended", "exited", "rejected")
+
 MAX_PER_PAGE = 100
 
 
@@ -122,7 +122,10 @@ def update_chama_settings_service(chama_id, user, data):
     _assert_active_member(user, chama_id)
 
     if not data:
-        raise AppError("Please provide at least one field to update (description, location, constitution, or logo_url).", 400)
+        raise AppError(
+            "Please provide at least one field to update (description, location, constitution, logo_url, default_interest_rate, or max_loan_amount).",
+            400,
+        )
 
     try:
         old_values = {
@@ -130,9 +133,18 @@ def update_chama_settings_service(chama_id, user, data):
             "location": chama.location,
             "constitution": chama.constitution,
             "logo_url": chama.logo_url,
+            "default_interest_rate": float(chama.default_interest_rate) if chama.default_interest_rate is not None else 10.0,
+            "max_loan_amount": float(chama.max_loan_amount) if chama.max_loan_amount is not None else 100000.0,
         }
-        for field in ("description", "location", "constitution", "logo_url"):
-            if field in data:
+        for field in (
+            "description",
+            "location",
+            "constitution",
+            "logo_url",
+            "default_interest_rate",
+            "max_loan_amount",
+        ):
+            if field in data and data[field] is not None:
                 setattr(chama, field, data[field])
 
         new_values = {
@@ -140,12 +152,15 @@ def update_chama_settings_service(chama_id, user, data):
             "location": chama.location,
             "constitution": chama.constitution,
             "logo_url": chama.logo_url,
+            "default_interest_rate": float(chama.default_interest_rate) if chama.default_interest_rate is not None else 10.0,
+            "max_loan_amount": float(chama.max_loan_amount) if chama.max_loan_amount is not None else 100000.0,
         }
         log_audit(chama.id, user.id, "update", "chamas", chama.id, old_values=old_values, new_values=new_values)
         db.session.commit()
         return {"message": "Chama profile updated successfully.", "chama": chama.to_dict()}
     except Exception as exc:
         handle_db_exception(db, exc, "We could not update the Chama profile. Please try again.")
+
 
 
 def create_project_service(chama_id, user, data):
@@ -180,112 +195,6 @@ def list_projects_service(chama_id, public_only=False, page=1, per_page=10):
     query = query.order_by(Project.created_at.desc())
     return _paginate_query(query, page, per_page)
 
-
-def submit_join_request_service(chama_id, data):
-    _assert_chama_exists(chama_id)
-    clean_email = validate_email(data.get("email"))
-
-    existing_pending = JoinRequest.query.filter_by(
-        chama_id=chama_id, email=clean_email, status="pending"
-    ).first()
-    if existing_pending:
-        raise AppError("You already have a pending join request for this Chama. Please await Admin review.", 409)
-
-    try:
-        join_req = JoinRequest(
-            chama_id=chama_id,
-            full_name=data["full_name"].strip(),
-            email=clean_email,
-            phone_number=data["phone_number"].strip(),
-            message=data.get("message"),
-            status="pending",
-            reviewed_by=None,
-            reviewed_at=None,
-        )
-        db.session.add(join_req)
-        db.session.commit()
-        return {
-            "message": "Your join request has been submitted! The Chama Admin will review your application.",
-            "join_request": join_req.to_dict(),
-        }
-    except Exception as exc:
-        handle_db_exception(db, exc, "We could not submit your join request. Please try again.")
-
-
-def list_join_requests_service(chama_id, user, status_filter=None, page=1, per_page=10):
-    _assert_chama_exists(chama_id)
-    _assert_active_member(user, chama_id)
-
-    query = JoinRequest.query.filter_by(chama_id=chama_id)
-    if status_filter in ("pending", "approved", "rejected"):
-        query = query.filter_by(status=status_filter)
-    query = query.order_by(JoinRequest.created_at.desc())
-    return _paginate_query(query, page, per_page)
-
-
-def review_join_request_service(req_id, user, payload):
-    join_req = db.session.get(JoinRequest, req_id)
-    if join_req is None:
-        raise AppError(f"Join request with ID {req_id} was not found.", 404)
-
-    _assert_active_member(user, join_req.chama_id)
-    decision = require_str(payload, "status", "Status", required=True)
-    if decision not in ("approved", "rejected"):
-        raise AppError("Invalid decision. Status must be either 'approved' or 'rejected'.", 400)
-
-    chama = db.session.get(Chama, join_req.chama_id)
-    chama_name = chama.name if chama else "Summit Chama"
-
-    try:
-        old_status = join_req.status
-        now = _utc_now()
-        join_req.status = decision
-        join_req.reviewed_by = user.id
-        join_req.reviewed_at = now
-
-        existing_user = User.query.filter_by(email=join_req.email).first()
-        if decision == "approved" and existing_user:
-            membership = Membership.query.filter_by(
-                user_id=existing_user.id, chama_id=join_req.chama_id
-            ).first()
-            if membership and membership.status == "pending":
-                membership.status = "active"
-                if membership.joined_at is None:
-                    membership.joined_at = now
-
-        log_audit(
-            join_req.chama_id,
-            user.id,
-            "update",
-            "join_requests",
-            join_req.id,
-            old_values={"status": old_status},
-            new_values={"status": decision, "reviewed_by": user.id},
-        )
-        db.session.commit()
-
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
-        if decision == "approved":
-            subject = f"Welcome to {chama_name} — Join Request Approved"
-            html_body = (
-                f"<p>Hello <strong>{join_req.full_name}</strong>,</p>"
-                f"<p>Your request to join <strong>{chama_name}</strong> has been approved! "
-                f"Log in or register here: <a href='{frontend_url}/login'>{frontend_url}/login</a></p>"
-            )
-        else:
-            subject = f"Update on Your Join Request to {chama_name}"
-            html_body = (
-                f"<p>Hello <strong>{join_req.full_name}</strong>,</p>"
-                f"<p>Thank you for your interest in <strong>{chama_name}</strong>. "
-                "Unfortunately, your request was not approved at this time."
-            )
-        _send_email(join_req.email, subject, html_body)
-        return {"message": f"Join request has been {decision}.", "join_request": join_req.to_dict()}
-    except AppError:
-        db.session.rollback()
-        raise
-    except Exception as exc:
-        handle_db_exception(db, exc, "We could not update the join request. Please try again.")
 
 
 def list_memberships_service(chama_id, user, status_filter=None, page=1, per_page=10):
@@ -329,12 +238,43 @@ def update_membership_service(membership_id, user, payload):
         }
         log_audit(membership.chama_id, user.id, "update", "memberships", membership.id, old_values=old_values, new_values=new_values)
         db.session.commit()
+
+        # Notify member via SendGrid when their pending membership is approved or rejected
+        if new_status and old_values["status"] == "pending" and new_status in ("active", "rejected"):
+            if membership.user and membership.user.email:
+                chama = db.session.get(Chama, membership.chama_id)
+                chama_name = chama.name if chama else "Summit Chama"
+                frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+
+                if new_status == "active":
+                    assigned_role = (membership.user.role or "member").replace("_", " ").title()
+                    subject = f"Welcome to {chama_name} — Membership Approved!"
+                    html_body = (
+                        f"<p>Hello <strong>{membership.user.full_name}</strong>,</p>"
+                        f"<p>Great news! Your request to join <strong>{chama_name}</strong> has been approved "
+                        f"(Member No: <strong>{membership.member_number}</strong>, Role: <strong>{assigned_role}</strong>).</p>"
+                        f"<p>Log in to your dashboard here: <a href='{frontend_url}/login'>{frontend_url}/login</a></p>"
+                    )
+                else:
+                    subject = f"Update on Your Membership Request — {chama_name}"
+                    html_body = (
+                        f"<p>Hello <strong>{membership.user.full_name}</strong>,</p>"
+                        f"<p>Thank you for applying to join <strong>{chama_name}</strong>. "
+                        f"Unfortunately, your membership request was not approved at this time.</p>"
+                    )
+                _send_email(membership.user.email, subject, html_body)
+
         return {"message": "Membership updated successfully.", "membership": membership.to_dict()}
     except AppError:
         db.session.rollback()
         raise
     except Exception as exc:
         handle_db_exception(db, exc, "We could not update the membership record. Please try again.")
+def list_chama_audit_logs_service(chama_id, user, page=1, per_page=10):
+    _assert_chama_exists(chama_id)
+    _assert_active_member(user, chama_id)
+    query = AuditLog.query.filter_by(chama_id=chama_id).order_by(AuditLog.created_at.desc())
+    return _paginate_query(query, page, per_page)
 
 
 def super_admin_list_users_service(page=1, per_page=10):

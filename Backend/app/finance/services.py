@@ -162,12 +162,18 @@ def get_contributions_service(chama_id, user, membership_id=None, page=1, per_pa
 
 
 def create_loan_service(chama_id, user, data):
-    _assert_chama_exists(chama_id)
+    chama = _assert_chama_exists(chama_id)
     _assert_active_member(user, chama_id)
 
     membership = db.session.get(Membership, data["membership_id"])
     if membership is None or membership.chama_id != chama_id:
         raise AppError("The selected membership does not belong to this Chama.", 400)
+
+    if chama.max_loan_amount and float(data["principal"]) > float(chama.max_loan_amount):
+        raise AppError(
+            f"Requested loan exceeds this Chama's maximum loan limit of KES {float(chama.max_loan_amount):,.2f}.",
+            400,
+        )
 
     try:
         new_loan = Loan(
@@ -194,7 +200,6 @@ def create_loan_service(chama_id, user, data):
         }
     except Exception as exc:
         handle_db_exception(db, exc, "We could not submit your loan request. Please try again.")
-
 
 def loan_decision_service(loan_id, user, payload):
     loan = db.session.get(Loan, loan_id)
@@ -271,7 +276,7 @@ def loan_decision_service(loan_id, user, payload):
         handle_db_exception(db, exc, "We could not update the loan status. Please try again.")
 
 
-def get_chama_loans_service(chama_id, user, membership_id=None, page=1, per_page=10):
+def get_chama_loans_service(chama_id, user, membership_id=None, status_filter=None, page=1, per_page=10):
     _assert_chama_exists(chama_id)
     _assert_active_member(user, chama_id)
     safe_page = max(int(page or 1), 1)
@@ -279,6 +284,8 @@ def get_chama_loans_service(chama_id, user, membership_id=None, page=1, per_page
     query = Loan.query.join(Membership).filter(Membership.chama_id == chama_id)
     if membership_id:
         query = query.filter(Loan.membership_id == membership_id)
+    if status_filter:
+        query = query.filter(Loan.status == status_filter)
     pagination = query.order_by(Loan.created_at.desc()).paginate(
         page=safe_page, per_page=safe_per_page, error_out=False
     )
@@ -286,8 +293,16 @@ def get_chama_loans_service(chama_id, user, membership_id=None, page=1, per_page
     for loan in pagination.items:
         item = loan.to_dict()
         total_repayable = _loan_total_repayable(loan)
+        total_paid = round(sum(float(r.amount) for r in loan.repayments), 2)
+        remaining_balance = max(round(total_repayable - total_paid, 2), 0.0)
         term = int(loan.term_months)
+        sorted_installments = sorted(loan.installments, key=lambda inst: inst.due_date)
+        next_due = sorted_installments[0].due_date.isoformat() if sorted_installments else None
+
         item["total_repayable"] = total_repayable
+        item["total_paid"] = total_paid
+        item["remaining_balance"] = remaining_balance
+        item["next_due_date"] = next_due
         item["monthly_installment"] = round(total_repayable / term, 2) if term > 0 else total_repayable
         loan_list.append(item)
     return {
@@ -296,7 +311,6 @@ def get_chama_loans_service(chama_id, user, membership_id=None, page=1, per_page
         "pages": pagination.pages,
         "current_page": pagination.page,
     }
-
 
 def create_loan_repayment_service(loan_id, user, data):
     loan = db.session.get(Loan, loan_id)
@@ -376,11 +390,17 @@ def get_financial_summary_service(chama_id, user):
         .scalar()
         or 0.0
     )
-    active_loans_count = (
+    active_loans = (
         Loan.query.join(Membership)
         .filter(Membership.chama_id == chama_id, Loan.status.in_(["approved", "disbursed"]))
-        .count()
+        .all()
     )
+    outstanding_balance = 0.0
+    for loan in active_loans:
+        total_rep = _loan_total_repayable(loan)
+        paid = sum(float(r.amount) for r in loan.repayments)
+        outstanding_balance += max(total_rep - paid, 0.0)
+
     unpaid_penalties = (
         db.session.query(db.func.sum(Penalty.amount))
         .join(Membership)
@@ -390,7 +410,8 @@ def get_financial_summary_service(chama_id, user):
     )
     return {
         "total_contributions": float(total_contributions),
-        "active_loans_count": active_loans_count,
+        "active_loans_count": len(active_loans),
+        "outstanding_loans_balance": round(outstanding_balance, 2),
         "unpaid_penalties": float(unpaid_penalties),
     }
 
@@ -420,7 +441,7 @@ def create_penalty_service(chama_id, user, data):
         handle_db_exception(db, exc, "We could not apply the penalty. Please try again.")
 
 
-def get_chama_penalties_service(chama_id, user, membership_id=None, page=1, per_page=10):
+def get_chama_penalties_service(chama_id, user, membership_id=None, status_filter=None, page=1, per_page=10):
     _assert_chama_exists(chama_id)
     _assert_active_member(user, chama_id)
     safe_page = max(int(page or 1), 1)
@@ -428,6 +449,8 @@ def get_chama_penalties_service(chama_id, user, membership_id=None, page=1, per_
     query = Penalty.query.join(Membership).filter(Membership.chama_id == chama_id)
     if membership_id:
         query = query.filter(Penalty.membership_id == membership_id)
+    if status_filter:
+        query = query.filter(Penalty.status == status_filter)
     pagination = query.order_by(Penalty.date_applied.desc()).paginate(
         page=safe_page, per_page=safe_per_page, error_out=False
     )
@@ -437,3 +460,28 @@ def get_chama_penalties_service(chama_id, user, membership_id=None, page=1, per_
         "current_page": pagination.page,
         "items": [p.to_dict() for p in pagination.items],
     }
+
+
+def pay_penalty_service(penalty_id, user):
+    penalty = db.session.get(Penalty, penalty_id)
+    if penalty is None:
+        raise AppError(f"Penalty with ID {penalty_id} was not found.", 404)
+    _assert_active_member(user, penalty.membership.chama_id)
+    if penalty.status == "paid":
+        raise AppError("This penalty has already been marked as paid.", 409)
+    try:
+        old_status = penalty.status
+        penalty.status = "paid"
+        log_audit(
+            penalty.membership.chama_id,
+            user.id,
+            "update",
+            "penalties",
+            penalty.id,
+            old_values={"status": old_status},
+            new_values={"status": "paid"},
+        )
+        db.session.commit()
+        return {"message": "Penalty marked as paid successfully.", "penalty": penalty.to_dict()}
+    except Exception as exc:
+        handle_db_exception(db, exc, "We could not update the penalty status. Please try again.")

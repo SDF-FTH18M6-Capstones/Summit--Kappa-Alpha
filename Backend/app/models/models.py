@@ -63,6 +63,8 @@ class Chama(db.Model):
     constitution = db.Column(db.Text, nullable=True)
     registration_number = db.Column(db.String(50), nullable=True)
     logo_url = db.Column(db.String(500), nullable=True)
+    default_interest_rate = db.Column(db.Numeric(5, 2), nullable=False, default=10.0)
+    max_loan_amount = db.Column(db.Numeric(12, 2), nullable=False, default=100000.0)
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
@@ -85,7 +87,11 @@ class Chama(db.Model):
             'registration_number': self.registration_number,
             'logo_url': self.logo_url,
             'created_by': self.created_by,
-            'created_at': self.created_at.isoformat()
+            'created_at': self.created_at.isoformat(),
+            'default_interest_rate': float(self.default_interest_rate) if self.default_interest_rate is not None else 10.0,
+            'max_loan_amount': float(self.max_loan_amount) if self.max_loan_amount is not None else 100000.0,
+
+            
         }
 
 class Membership(db.Model):
@@ -119,34 +125,6 @@ class Membership(db.Model):
         }
 
 
-
-class JoinRequest(db.Model):
-    __tablename__ = 'join_requests'
-
-    id = db.Column(db.Integer, primary_key=True)
-    chama_id = db.Column(db.Integer, db.ForeignKey('chamas.id'), nullable=False)
-    full_name = db.Column(db.String(150), nullable=False)
-    email = db.Column(db.String(254), nullable=False)
-    phone_number = db.Column(db.String(20), nullable=False)
-    message = db.Column(db.Text, nullable=True)
-    status = db.Column(db.String(50), default='pending', nullable=False)
-    reviewed_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    reviewed_at = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'chama_id': self.chama_id,
-            'full_name': self.full_name,
-            'email': self.email,
-            'phone_number': self.phone_number,
-            'message': self.message,
-            'status': self.status,
-            'reviewed_by': self.reviewed_by,
-            'reviewed_at': self.reviewed_at.isoformat() if self.reviewed_at else None,
-            'created_at': self.created_at.isoformat()
-        }
 
 class ContributionType(db.Model):
     __tablename__ = 'contribution_types'
@@ -191,13 +169,15 @@ class Contribution(db.Model):
     recorded_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
-   
-
     def to_dict(self):
+        user = self.membership.user if self.membership else None
         return {
             'id': self.id,
             'membership_id': self.membership_id,
+            'member_name': user.full_name if user else None,
+            'member_number': self.membership.member_number if self.membership else None,
             'contribution_type_id': self.contribution_type_id,
+            'contribution_type_name': self.contribution_type.name if self.contribution_type else None,
             'amount': float(self.amount),
             'mpesa_code': self.mpesa_code,
             'paid_at': self.paid_at.isoformat(),
@@ -205,8 +185,12 @@ class Contribution(db.Model):
             'notes': self.notes,
             'recorded_by': self.recorded_by,
             'created_at': self.created_at.isoformat()
-        } 
+        }
 
+
+   
+
+    
 class Penalty(db.Model):
     __tablename__ = 'penalties'
 
@@ -220,16 +204,20 @@ class Penalty(db.Model):
     applied_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     
     def to_dict(self):
+        user = self.membership.user if self.membership else None
         return {
             'id': self.id,
             'membership_id': self.membership_id,
+            'member_name': user.full_name if user else None,
+            'member_number': self.membership.member_number if self.membership else None,
             'contribution_type_id': self.contribution_type_id,
             'amount': float(self.amount),
             'reason': self.reason,
             'date_applied': self.date_applied.isoformat(),
             'status': self.status,
             'applied_by': self.applied_by
-        } 
+        }
+
 
 class Meeting(db.Model):
     __tablename__ = 'meetings'
@@ -311,9 +299,12 @@ class Loan(db.Model):
     repayments = db.relationship('LoanRepayment', backref='loan', lazy=True, cascade='all, delete-orphan')
 
     def to_dict(self):
+        user = self.membership.user if self.membership else None
         return {
             'id': self.id,
             'membership_id': self.membership_id,
+            'member_name': user.full_name if user else None,
+            'member_number': self.membership.member_number if self.membership else None,
             'principal': float(self.principal) if self.principal else 0.0,
             'interest_rate': float(self.interest_rate) if self.interest_rate else 0.0,
             'term_months': self.term_months,
@@ -324,6 +315,7 @@ class Loan(db.Model):
             'disbursed_at': self.disbursed_at.isoformat() if self.disbursed_at else None,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
+
 
 
 class LoanInstallment(db.Model):
@@ -434,10 +426,12 @@ class AuditLog(db.Model):
             'id': self.id,
             'chama_id': self.chama_id,
             'user_id': self.user_id,
+            'actor_name': self.user.full_name if self.user else 'System',
+            'actor_role': self.user.role if self.user else None,
             'action': self.action,
             'table_name': self.table_name,
             'record_id': self.record_id,
             'old_values': self.old_values,
             'new_values': self.new_values,
             'created_at': self.created_at.isoformat() if self.created_at else None
-        }           
+        }

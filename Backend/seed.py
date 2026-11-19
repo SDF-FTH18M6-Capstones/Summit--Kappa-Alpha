@@ -22,7 +22,6 @@ from app.models.models import (
     Contribution,
     ContributionType,
     EmailVerificationToken,
-    JoinRequest,
     Loan,
     LoanInstallment,
     LoanRepayment,
