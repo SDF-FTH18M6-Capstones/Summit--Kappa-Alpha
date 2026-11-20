@@ -15,11 +15,11 @@ flask-marshmallow = "*"
 marshmallow-sqlalchemy = "*"
 sendgrid = "*"
 cloudinary = "*"
-pillow = "*"
-flasgger = "*"
 pytest = "*"
 pytest-cov = "*"
 python-dotenv = "*"
+pillow = "*"
+flasgger = "*"
 
 [dev-packages]
 

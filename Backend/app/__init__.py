@@ -42,6 +42,7 @@ def create_app():
     from app.chamas.routes import chamas_bp
     from app.finance.routes import finance_bp
     from app.operations.routes import operations_bp
+    from flasgger import Swagger
     from app.utils.uploads import uploads_bp
     
 
@@ -50,6 +51,7 @@ def create_app():
     app.register_blueprint(finance_bp)
     app.register_blueprint(operations_bp, url_prefix="/api")
     app.register_blueprint(uploads_bp)
+    Swagger(app)
 
     # Standard JWT error handlers
     @jwt.unauthorized_loader
