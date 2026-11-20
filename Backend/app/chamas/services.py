@@ -195,7 +195,75 @@ def list_projects_service(chama_id, public_only=False, page=1, per_page=10):
     query = query.order_by(Project.created_at.desc())
     return _paginate_query(query, page, per_page)
 
+def update_project_service(current_user, chama_id, project_id, data):
+    _assert_chama_exists(chama_id)
+    _assert_active_member(current_user, chama_id)
 
+    project = Project.query.filter_by(id=project_id, chama_id=chama_id).first()
+    if not project:
+        raise AppError("Project not found.", 404)
+
+    old_values = project.to_dict()
+
+    if "title" in data:
+        project.title = require_str(data, "title", "Project title", required=True, max_len=200)
+    if "description" in data:
+        project.description = require_str(data, "description", "Description", required=False, max_len=2000)
+    if "amount_invested" in data and data["amount_invested"] is not None:
+        project.amount_invested = float(data["amount_invested"])
+    if "status" in data and data["status"]:
+        status = str(data["status"]).strip().lower()
+        if status not in {"planned", "ongoing", "completed"}:
+            raise AppError("Project status must be planned, ongoing, or completed.", 400)
+        project.status = status
+    if "image_url" in data:
+        project.image_url = require_str(data, "image_url", "Image URL", required=False, max_len=500)
+    if "is_public" in data:
+        project.is_public = bool(data["is_public"])
+
+    try:
+        log_audit(
+            chama_id,
+            current_user.id,
+            "update",
+            "projects",
+            project.id,
+            old_values=old_values,
+            new_values=project.to_dict(),
+        )
+        db.session.commit()
+        return {"message": "Project updated successfully.", "project": project.to_dict()}
+    except AppError:
+        db.session.rollback()
+        raise
+    except Exception as exc:
+        handle_db_exception(db, exc, "Unable to update project.")
+
+
+def delete_project_service(current_user, chama_id, project_id):
+    _assert_chama_exists(chama_id)
+    _assert_active_member(current_user, chama_id)
+
+    project = Project.query.filter_by(id=project_id, chama_id=chama_id).first()
+    if not project:
+        raise AppError("Project not found.", 404)
+
+    old_values = project.to_dict()
+    try:
+        db.session.delete(project)
+        log_audit(
+            chama_id,
+            current_user.id,
+            "delete",
+            "projects",
+            project_id,
+            old_values=old_values,
+            new_values=None,
+        )
+        db.session.commit()
+        return {"message": "Project deleted successfully."}
+    except Exception as exc:
+        handle_db_exception(db, exc, "Unable to delete project.")
 
 def list_memberships_service(chama_id, user, status_filter=None, page=1, per_page=10):
     _assert_chama_exists(chama_id)

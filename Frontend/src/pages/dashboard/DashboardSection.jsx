@@ -4,6 +4,7 @@ import { ShieldAlert, ArrowLeft } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import axiosClient, { getErrorMessage } from "../../api/axiosClient";
 import { DashboardHeading, Panel } from "./DashboardShared";
+import MemberDashboard from "./MemberDashboard";
 
 const formatCurrency = (amount) =>
   new Intl.NumberFormat("en-KE", {
@@ -30,11 +31,26 @@ const rolePermissions = {
     "officials",
     "chama-rules",
     "reports",
+    "my-account",
   ],
-  treasurer: ["contributions", "loans", "penalties", "members", "reports"],
-  secretary: ["meetings", "minutes", "announcements", "member-register"],
+  treasurer: [
+    "contributions",
+    "loans",
+    "penalties",
+    "members",
+    "reports",
+    "my-account",
+  ],
+  secretary: [
+    "meetings",
+    "minutes",
+    "announcements",
+    "member-register",
+    "my-account",
+  ],
   member: ["loans", "meetings", "news", "contributions"],
 };
+
 
 export default function DashboardSection() {
   const { section } = useParams();
@@ -187,6 +203,10 @@ export default function DashboardSection() {
       active = false;
     };
   }, [section, isAllowed, role, chamaId, membershipId]);
+  if (isAllowed && section === "my-account") {
+  return <MemberDashboard />;
+  }
+
 
   if (!isAllowed) {
     return (

@@ -1,21 +1,23 @@
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
-  Users,
-  Wallet,
-  FileText,
-  Settings,
-  Building2,
   ClipboardList,
-  HandCoins,
-  CalendarDays,
-  Megaphone,
-  BookOpen,
+  Users,
   ShieldCheck,
+  Settings,
+  FileText,
+  Wallet,
+  HandCoins,
+  AlertTriangle,
+  CalendarDays,
+  BookOpen,
+  Megaphone,
+  UserCircle,
+  Building2,
   History,
-  Receipt,
   Bell,
 } from "lucide-react";
+
 
 import { useAuth } from "../context/AuthContext";
 
@@ -33,31 +35,33 @@ const navigationByRole = {
   super_admin: superAdminNav,
   superadmin: superAdminNav,
 
-  chama_admin: [
+    chama_admin: [
     { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
     { name: "Join Requests", path: "/dashboard/join-requests", icon: ClipboardList },
     { name: "Members", path: "/dashboard/members", icon: Users },
     { name: "Officials", path: "/dashboard/officials", icon: ShieldCheck },
     { name: "Chama Rules", path: "/dashboard/chama-rules", icon: Settings },
     { name: "Reports", path: "/dashboard/reports", icon: FileText },
+    { name: "My Member View", path: "/dashboard/my-account", icon: UserCircle },
   ],
-
   treasurer: [
     { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
     { name: "Contributions", path: "/dashboard/contributions", icon: Wallet },
     { name: "Loans", path: "/dashboard/loans", icon: HandCoins },
-    { name: "Penalties", path: "/dashboard/penalties", icon: Receipt },
+    { name: "Penalties", path: "/dashboard/penalties", icon: AlertTriangle },
     { name: "Members", path: "/dashboard/members", icon: Users },
     { name: "Reports", path: "/dashboard/reports", icon: FileText },
+    { name: "My Member View", path: "/dashboard/my-account", icon: UserCircle },
   ],
-
   secretary: [
     { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
     { name: "Meetings", path: "/dashboard/meetings", icon: CalendarDays },
     { name: "Minutes", path: "/dashboard/minutes", icon: BookOpen },
     { name: "Announcements", path: "/dashboard/announcements", icon: Megaphone },
     { name: "Member Register", path: "/dashboard/member-register", icon: Users },
+    { name: "My Member View", path: "/dashboard/my-account", icon: UserCircle },
   ],
+
 
   member: [
     { name: "Home", path: "/dashboard", icon: LayoutDashboard },

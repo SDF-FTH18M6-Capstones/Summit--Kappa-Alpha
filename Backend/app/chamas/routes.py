@@ -8,6 +8,7 @@ from marshmallow import ValidationError
 
 from app.chamas.services import (
     create_project_service,
+    delete_project_service,
     get_public_chama_profile_service,
     list_chama_audit_logs_service,
     list_chamas_service,
@@ -18,6 +19,7 @@ from app.chamas.services import (
     super_admin_toggle_user_service,
     update_chama_settings_service,
     update_membership_service,
+    update_project_service,
 )
 
 from app.utils.decorators import SUPER_ADMIN, role_required
@@ -86,6 +88,19 @@ def list_projects(chama_id):
     return jsonify(result), 200
 
 
+@chamas_bp.route("/chamas/<int:chama_id>/projects/<int:project_id>", methods=["PATCH"])
+@role_required(*CHAMA_ADMIN_ROLES)
+def update_project(chama_id, project_id):
+    data = request.get_json(silent=True) or {}
+    return jsonify(update_project_service(g.current_user, chama_id, project_id, data)), 200
+
+
+@chamas_bp.route("/chamas/<int:chama_id>/projects/<int:project_id>", methods=["DELETE"])
+@role_required(*CHAMA_ADMIN_ROLES)
+def delete_project(chama_id, project_id):
+    return jsonify(delete_project_service(g.current_user, chama_id, project_id)), 200
+
+
 @chamas_bp.route("/chamas/<int:chama_id>/memberships", methods=["GET"])
 @role_required(*ALL_CHAMA_ROLES)
 def list_memberships(chama_id):
@@ -116,7 +131,6 @@ def list_chama_audit_logs(chama_id):
         per_page=request.args.get("per_page", 10, type=int),
     )
     return jsonify(result), 200
-
 
 
 @chamas_bp.route("/admin/users", methods=["GET"])
