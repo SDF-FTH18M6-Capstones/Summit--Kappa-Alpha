@@ -96,12 +96,17 @@ def _issue_verification_email(user):
 
 
 def _attach_membership_context(user):
-    membership = Membership.query.filter_by(user_id=user.id).first()
+    membership = (
+        Membership.query.filter_by(user_id=user.id)
+        .order_by(Membership.id.desc())
+        .first()
+    )
     payload = user.to_dict()
     payload["chama_id"] = membership.chama_id if membership else None
     payload["membership_id"] = membership.id if membership else None
     payload["membership_status"] = membership.status if membership else None
     return payload
+
 
 
 def register_chama_service(data):
@@ -200,38 +205,81 @@ def register_member_service(data):
     if not chama:
         raise AppError("The Chama you selected could not be found.", 404)
 
-    if User.query.filter_by(email=email).first():
-        raise AppError("An account with this email address already exists. Please log in instead.", 409)
+    existing_user = User.query.filter_by(email=email).first()
+    if existing_user:
+        if existing_user.role == "super_admin":
+            raise AppError("This email belongs to a platform administrator account.", 409)
+
+        if not existing_user.is_active:
+            raise AppError(
+                "Your platform account has been suspended. Please contact platform support.",
+                403,
+            )
+
+        active_or_pending = Membership.query.filter(
+            Membership.user_id == existing_user.id,
+            Membership.status.in_(["active", "pending", "suspended"]),
+        ).first()
+        if active_or_pending:
+            raise AppError(
+                "An account with this email already has an active or pending Chama membership. Please log in instead.",
+                409,
+            )
+
+        already_in_this_chama = Membership.query.filter_by(
+            user_id=existing_user.id,
+            chama_id=chama.id,
+        ).first()
+        if already_in_this_chama:
+            raise AppError(
+                "Your previous request to join this specific Chama was declined. Please choose a different Chama.",
+                409,
+            )
 
     try:
-        new_user = User(
-            full_name=full_name,
-            email=email,
-            password=generate_password_hash(password),
-            phone_number=phone,
-            role="member",
-            profile_image_url=profile_image_url,
-            is_email_verified=False,
-            is_active=True,
-        )
-        db.session.add(new_user)
-        db.session.flush()
+        if existing_user:
+            target_user = existing_user
+            target_user.full_name = full_name
+            target_user.phone_number = phone
+            target_user.password = generate_password_hash(password)
+            if profile_image_url:
+                target_user.profile_image_url = profile_image_url
+        else:
+            target_user = User(
+                full_name=full_name,
+                email=email,
+                password=generate_password_hash(password),
+                phone_number=phone,
+                role="member",
+                profile_image_url=profile_image_url,
+                is_email_verified=False,
+                is_active=True,
+            )
+            db.session.add(target_user)
+            db.session.flush()
 
         next_number = Membership.query.filter_by(chama_id=chama.id).count() + 1
         membership = Membership(
-            user_id=new_user.id,
+            user_id=target_user.id,
             chama_id=chama.id,
             member_number=f"MEM{next_number:03d}",
             status="pending",
         )
         db.session.add(membership)
 
-        _issue_verification_email(new_user)
+        if not target_user.is_email_verified:
+            _issue_verification_email(target_user)
+
         db.session.commit()
 
+        msg = (
+            "Your membership application to the new Chama has been submitted! Please await Chama Admin approval."
+            if target_user.is_email_verified
+            else "Your member account has been created! Please verify your email and await Chama Admin approval."
+        )
         return {
-            "message": "Your member account has been created! Please verify your email and await Chama Admin approval.",
-            "user": new_user.to_dict(),
+            "message": msg,
+            "user": target_user.to_dict(),
             "membership": membership.to_dict(),
         }
     except AppError:

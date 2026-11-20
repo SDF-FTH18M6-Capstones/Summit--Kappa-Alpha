@@ -1,4 +1,3 @@
- 
 import React from "react";
 
 const Projects = ({ projects = [] }) => {
@@ -6,13 +5,10 @@ const Projects = ({ projects = [] }) => {
     switch (status?.toLowerCase()) {
       case "ongoing":
         return "bg-blue-100 text-blue-700";
-
       case "planned":
         return "bg-orange-100 text-orange-700";
-
       case "completed":
         return "bg-green-100 text-green-700";
-
       default:
         return "bg-gray-100 text-gray-600";
     }
@@ -36,40 +32,49 @@ const Projects = ({ projects = [] }) => {
 
       {projects.length > 0 ? (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {projects.map((project) => (
-            <article
-              key={project.id}
-              className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
-            >
-              {project.image && (
-                <img
-                  src={project.image}
-                  alt={project.name}
-                  className="h-52 w-full object-cover"
-                />
-              )}
+          {projects.map((project) => {
+            const title = project.title || project.name;
+            const image = project.image_url || project.image;
 
-              <div className="p-6">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ${getStatusStyle(
-                      project.status
-                    )}`}
-                  >
-                    {project.status || "Status unavailable"}
-                  </span>
+            return (
+              <article
+                key={project.id}
+                className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
+              >
+                {image && (
+                  <img
+                    src={image}
+                    alt={title}
+                    className="h-52 w-full object-cover"
+                  />
+                )}
+
+                <div className="p-6">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${getStatusStyle(
+                        project.status
+                      )}`}
+                    >
+                      {project.status || "planned"}
+                    </span>
+
+                    {Number(project.amount_invested) > 0 && (
+                      <span className="text-xs font-semibold text-gray-500">
+                        KES {Number(project.amount_invested).toLocaleString("en-KE")}
+                      </span>
+                    )}
+                  </div>
+
+                  <h3 className="text-xl font-bold text-[#123D2B]">{title}</h3>
+
+                  <p className="mt-3 leading-6 text-gray-600">
+                    {project.description || "Shared community investment project."}
+                  </p>
                 </div>
-
-                <h3 className="text-xl font-bold text-[#123D2B]">
-                  {project.name}
-                </h3>
-
-                <p className="mt-3 leading-6 text-gray-600">
-                  {project.description}
-                </p>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       ) : (
         <div className="rounded-xl bg-[#F3F5F3] p-8 text-center">

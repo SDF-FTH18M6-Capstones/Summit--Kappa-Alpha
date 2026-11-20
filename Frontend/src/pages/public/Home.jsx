@@ -1,4 +1,3 @@
-
 import React from "react";
 import { Link } from "react-router-dom";
 
@@ -26,10 +25,8 @@ const announcements = [
 const Home = () => {
   return (
     <div>
-
       <section className="bg-[#F3F5F3]">
         <div className="mx-auto grid max-w-7xl items-center gap-10 px-6 py-16 md:grid-cols-2 md:py-24">
-
           <div>
             <span className="mb-5 inline-block rounded-full bg-green-100 px-4 py-2 text-sm font-semibold text-[#1F6B49]">
               Welcome to Summit Chama
@@ -68,12 +65,10 @@ const Home = () => {
               className="h-[350px] w-full object-cover md:h-[470px]"
             />
           </div>
-
         </div>
       </section>
 
       <section className="mx-auto grid max-w-7xl grid-cols-1 gap-5 px-6 py-14 sm:grid-cols-3">
-
         {[
           { number: "100+", label: "Members" },
           { number: "2026", label: "Year Founded" },
@@ -89,12 +84,10 @@ const Home = () => {
             <p className="mt-2 text-gray-500">{stat.label}</p>
           </div>
         ))}
-
       </section>
 
       <section className="bg-[#F3F5F3] py-16">
         <div className="mx-auto max-w-7xl px-6">
-
           <div className="mb-10 flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="font-semibold uppercase tracking-wider text-[#1F6B49]">
@@ -115,39 +108,32 @@ const Home = () => {
                 <p className="text-sm font-medium text-[#1F6B49]">
                   {item.date}
                 </p>
-
                 <h3 className="mt-4 text-xl font-bold text-[#123D2B]">
                   {item.title}
                 </h3>
-
                 <p className="mt-3 leading-7 text-gray-600">
                   {item.description}
                 </p>
               </article>
             ))}
           </div>
-
         </div>
       </section>
 
       <section id="how-to-join" className="mx-auto max-w-7xl px-6 py-20">
-
         <div className="mb-12 text-center">
           <p className="font-semibold uppercase tracking-wider text-[#1F6B49]">
             Getting started
           </p>
-
           <h2 className="mt-2 text-3xl font-bold text-[#123D2B] md:text-4xl">
             How to Join
           </h2>
-
           <p className="mx-auto mt-4 max-w-2xl text-gray-600">
             Become part of our community and start building your financial future.
           </p>
         </div>
 
         <div className="grid gap-8 md:grid-cols-3">
-
           {[
             {
               number: "01",
@@ -172,44 +158,35 @@ const Home = () => {
               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#123D2B] text-lg font-bold text-white">
                 {step.number}
               </span>
-
               <h3 className="mt-6 text-xl font-bold text-[#123D2B]">
                 {step.title}
               </h3>
-
               <p className="mt-3 leading-7 text-gray-600">
                 {step.description}
               </p>
             </div>
           ))}
-
         </div>
 
         <div className="mt-16 rounded-2xl bg-[#123D2B] px-6 py-12 text-center text-white md:px-16">
-
-          <h2 className="text-3xl font-bold">
-            Ready to join Summit?
-          </h2>
-
+          <h2 className="text-3xl font-bold">Ready to join Summit?</h2>
           <p className="mx-auto mt-4 max-w-2xl leading-7 text-gray-200">
             Create your account, verify your email, then wait for the
             administrator to approve your membership.
           </p>
-
           <Link
-            to="/register"
+            to="/signup-choice"
             className="mt-7 inline-block rounded-lg bg-white px-8 py-3 font-bold text-[#123D2B] transition hover:bg-gray-100"
           >
             Create account
           </Link>
-
         </div>
-
       </section>
     </div>
   );
 };
 
 export default Home;
+
 
 

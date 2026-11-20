@@ -12,7 +12,9 @@ import {
 } from "lucide-react";
 
 import PasswordInput from "../../components/PasswordInput";
-import axiosClient from "../../api/axiosClient";
+import axiosClient, { getErrorMessage } from "../../api/axiosClient";
+
+
 
 const initialFormData = {
   chama_name: "",
@@ -141,43 +143,49 @@ export default function RegisterChama() {
   };
 
   const handleSubmit = async (event) => {
-    event.preventDefault();
+  event.preventDefault();
 
-    if (!validateStep()) return;
+  if (!validateStep()) return;
 
-    const { confirm_password, ...payload } = formData;
-
-    try {
-      setLoading(true);
-      setError("");
-      setSuccess("");
-
-      const response = await axiosClient.post(
-        "/auth/register-chama",
-        payload
-      );
-
-      setSuccess(
-        response.data.message ||
-          "Chama registered successfully! Please check your email to verify your account."
-      );
-
-      setFormData(initialFormData);
-      setCurrentStep(0);
-
-    } catch (err) {
-      console.error("Chama registration failed:", err);
-
-      setError(
-        err.response?.data?.error ||
-          err.response?.data?.message ||
-          "Registration failed. Please try again."
-      );
-
-    } finally {
-      setLoading(false);
-    }
+  const payload = {
+    chama_name: formData.chama_name.trim(),
+    location: formData.location.trim(),
+    description: formData.description.trim() || null,
+    constitution: formData.constitution.trim() || null,
+    registration_number: formData.registration_number.trim() || null,
+    logo_url: formData.logo_url.trim() || null,
+    full_name: formData.full_name.trim(),
+    email: formData.email.trim().toLowerCase(),
+    phone_number: formData.phone_number.trim(),
+    profile_image_url: formData.profile_image_url.trim() || null,
+    password: formData.password,
   };
+
+  try {
+    setLoading(true);
+    setError("");
+    setSuccess("");
+
+    const response = await axiosClient.post(
+      "/auth/register-chama",
+      payload
+    );
+
+    setSuccess(
+      response.data.message ||
+        "Chama registered successfully! Please check your email to verify your account."
+    );
+
+    setFormData(initialFormData);
+    setCurrentStep(0);
+  } catch (err) {
+    console.error("Chama registration failed:", err.response?.data || err);
+    setError(getErrorMessage(err));
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const progress = ((currentStep + 1) / steps.length) * 100;
 

@@ -1,660 +1,550 @@
-
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   CalendarDays,
-  Users,
-  FileText,
+  BookOpen,
   Megaphone,
-  Plus,
-  Eye,
+  Users,
   Trash2,
-  Search,
-  Upload,
-  X,
+  Eye,
+  ExternalLink,
 } from "lucide-react";
-
+import { useAuth } from "../../context/AuthContext";
+import axiosClient, { getErrorMessage } from "../../api/axiosClient";
 import {
-  StatCard,
-  Panel,
   ActionButton,
+  Panel,
+  StatCard,
 } from "./DashboardShared";
 
-// DEMO DATA: Replace with information from your Flask API later.
-const initialMeetings = [
-  {
-    id: 1,
-    title: "Monthly Chama Meeting",
-    date: "2026-11-20",
-    time: "10:00",
-    venue: "Community Hall",
-    agenda: "Monthly contributions, financial updates and member concerns.",
-    status: "Upcoming",
-  },
-  {
-    id: 2,
-    title: "Annual General Meeting",
-    date: "2026-12-05",
-    time: "14:00",
-    venue: "Summit Conference Room",
-    agenda: "Annual reports, elections and planning for the coming year.",
-    status: "Upcoming",
-  },
-];
-
-const initialAnnouncements = [
-  {
-    id: 1,
-    title: "Monthly Contributions Reminder",
-    message: "Members are reminded to make their monthly contributions.",
-    date: "2026-11-12",
-  },
-  {
-    id: 2,
-    title: "Upcoming Chama Meeting",
-    message: "Our next monthly meeting will take place on 20 November.",
-    date: "2026-11-10",
-  },
-];
-
-const initialMembers = [
-  {
-    id: 1,
-    name: "Jane Wanjiku",
-    phone: "0712345678",
-    email: "jane@example.com",
-    joined: "2025-01-10",
-    status: "Active",
-  },
-  {
-    id: 2,
-    name: "Peter Kamau",
-    phone: "0723456789",
-    email: "peter@example.com",
-    joined: "2025-03-15",
-    status: "Active",
-  },
-  {
-    id: 3,
-    name: "Mary Njeri",
-    phone: "0734567890",
-    email: "mary@example.com",
-    joined: "2025-05-20",
-    status: "Inactive",
-  },
-];
-
-const initialMinutes = [
-  {
-    id: 1,
-    title: "Monthly Chama Meeting",
-    date: "2026-10-20",
-    attendance: 18,
-    content:
-      "Members discussed monthly contributions, financial progress and upcoming activities. The treasurer presented the financial report. Members agreed to continue making contributions before the monthly deadline.",
-    attachments: [],
-    status: "Published",
-  },
-  {
-    id: 2,
-    title: "Finance Review Meeting",
-    date: "2026-09-15",
-    attendance: 15,
-    content:
-      "The meeting reviewed the financial records and outstanding contributions. Members agreed that reminders should be sent before the next payment deadline.",
-    attachments: [],
-    status: "Draft",
-  },
-];
-
-const getToday = () => {
-  const today = new Date();
-  const offset = today.getTimezoneOffset();
-
-  return new Date(today.getTime() - offset * 60000)
-    .toISOString()
-    .slice(0, 10);
-};
-
 export default function SecretaryDashboard() {
-  const [meetings, setMeetings] = useState(initialMeetings);
-  const [announcements, setAnnouncements] = useState(initialAnnouncements);
-  const [members] = useState(initialMembers);
-  const [minutes, setMinutes] = useState(initialMinutes);
+  const { user } = useAuth();
+  const chamaId = user?.chama_id;
+
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const [meetings, setMeetings] = useState([]);
+  const [minutesList, setMinutesList] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
+  const [members, setMembers] = useState([]);
 
   const [meetingForm, setMeetingForm] = useState({
     title: "",
     date: "",
-    time: "",
+    time: "14:00",
     venue: "",
     agenda: "",
-    emailReminder: true,
-  });
-
-  const [announcementForm, setAnnouncementForm] = useState({
-    title: "",
-    message: "",
-    emailNotification: false,
   });
 
   const [minutesForm, setMinutesForm] = useState({
+    meeting_id: "",
+    content: "",
+    attachmentFile: null,
+  });
+
+  const [selectedMinutes, setSelectedMinutes] = useState(null);
+  const [attendanceMeetingId, setAttendanceMeetingId] = useState("");
+  const [attendanceMap, setAttendanceMap] = useState({});
+
+  const [announcementForm, setAnnouncementForm] = useState({
     title: "",
-    date: "",
-    attendance: "",
     content: "",
   });
 
-  const [attachments, setAttachments] = useState([]);
-  const [search, setSearch] = useState("");
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const [selectedMeeting, setSelectedMeeting] = useState(null);
-  const [selectedMinutes, setSelectedMinutes] = useState(null);
-
-  const showSuccess = (text) => {
-    setMessage(text);
+  const showFeedback = (text) => {
     setError("");
+    setMessage(text);
+    setTimeout(() => setMessage(""), 4500);
   };
 
-  const showError = (text) => {
-    setError(text);
-    setMessage("");
-  };
-
-  const scheduleMeeting = (event) => {
-    event.preventDefault();
-
-    if (
-      !meetingForm.title.trim() ||
-      !meetingForm.date ||
-      !meetingForm.time ||
-      !meetingForm.venue.trim() ||
-      !meetingForm.agenda.trim()
-    ) {
-      showError("Please fill in all meeting details.");
+  const fetchSecretaryData = useCallback(async () => {
+    if (!chamaId) {
+      setLoading(false);
       return;
     }
 
-    if (meetingForm.date < getToday()) {
-      showError("Please select today or a future date for the meeting.");
+    setLoading(true);
+    setError("");
+    try {
+      const [meetingsRes, minutesRes, announcementsRes, membersRes] =
+        await Promise.all([
+          axiosClient.get(`/chamas/${chamaId}/meetings`, {
+            params: { per_page: 50 },
+          }),
+          axiosClient.get(`/chamas/${chamaId}/minutes`, {
+            params: { per_page: 50 },
+          }),
+          axiosClient.get(`/chamas/${chamaId}/announcements`, {
+            params: { per_page: 50 },
+          }),
+          axiosClient.get(`/chamas/${chamaId}/memberships`, {
+            params: { per_page: 100 },
+          }),
+        ]);
+
+      setMeetings(meetingsRes.data?.items || []);
+      setMinutesList(minutesRes.data?.items || []);
+      setAnnouncements(announcementsRes.data?.items || []);
+      setMembers(membersRes.data?.items || []);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [chamaId]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(fetchSecretaryData, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [fetchSecretaryData]);
+
+  const handleScheduleMeeting = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError("");
+    try {
+      const meetingDateIso = `${meetingForm.date}T${meetingForm.time || "10:00"}:00Z`;
+      await axiosClient.post(`/chamas/${chamaId}/meetings`, {
+        title: meetingForm.title.trim(),
+        meeting_date: meetingDateIso,
+        venue: meetingForm.venue.trim() || null,
+        agenda: meetingForm.agenda.trim() || null,
+      });
+
+      setMeetingForm({
+        title: "",
+        date: "",
+        time: "14:00",
+        venue: "",
+        agenda: "",
+      });
+      showFeedback("Meeting scheduled successfully.");
+      await fetchSecretaryData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const deleteMeeting = async (id) => {
+    setSubmitting(true);
+    setError("");
+    try {
+      await axiosClient.delete(`/meetings/${id}`);
+      showFeedback("Meeting removed.");
+      await fetchSecretaryData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSaveMinutes = async (e) => {
+    e.preventDefault();
+    if (!minutesForm.meeting_id) {
+      setError("Please select a scheduled meeting first.");
       return;
     }
 
-    // BACKEND: POST /api/meetings
-    // Send meeting details and email reminder preference.
+    setSubmitting(true);
+    setError("");
+    try {
+      let uploadedFileUrl = null;
 
-    const newMeeting = {
-      id: Date.now(),
-      title: meetingForm.title.trim(),
-      date: meetingForm.date,
-      time: meetingForm.time,
-      venue: meetingForm.venue.trim(),
-      agenda: meetingForm.agenda.trim(),
-      status: "Upcoming",
-    };
+      if (minutesForm.attachmentFile) {
+        const formData = new FormData();
+        formData.append("file", minutesForm.attachmentFile);
+        const uploadRes = await axiosClient.post("/uploads", formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+        uploadedFileUrl = uploadRes.data?.url || null;
+      }
 
-    setMeetings((current) => [...current, newMeeting]);
+      await axiosClient.post(`/meetings/${minutesForm.meeting_id}/minutes`, {
+        minutes: minutesForm.content.trim(),
+        file_url: uploadedFileUrl,
+      });
 
-    setMeetingForm({
-      title: "",
-      date: "",
-      time: "",
-      venue: "",
-      agenda: "",
-      emailReminder: true,
-    });
-
-    showSuccess("Meeting scheduled successfully.");
+      setMinutesForm({
+        meeting_id: "",
+        content: "",
+        attachmentFile: null,
+      });
+      showFeedback("Meeting minutes saved and published to members.");
+      await fetchSecretaryData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const viewMeeting = (meeting) => {
-    setSelectedMeeting(meeting);
+  const handleSelectAttendanceMeeting = async (meetingId) => {
+    setAttendanceMeetingId(meetingId);
+    if (!meetingId) {
+      setAttendanceMap({});
+      return;
+    }
+    try {
+      const res = await axiosClient.get(`/meetings/${meetingId}/attendance`);
+      const existing = {};
+      (res.data?.items || []).forEach((rec) => {
+        existing[rec.membership_id] = rec.status;
+      });
+      setAttendanceMap(existing);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
   };
 
-  const deleteMeeting = (id) => {
-    const meeting = meetings.find((item) => item.id === id);
-
-    if (!meeting) return;
-
-    const confirmed = window.confirm(
-      `Are you sure you want to delete "${meeting.title}"?`
-    );
-
-    if (!confirmed) return;
-
-    // BACKEND: DELETE /api/meetings/${id}
-
-    setMeetings((current) =>
-      current.filter((item) => item.id !== id)
-    );
-
-    setSelectedMeeting(null);
-    showSuccess("Meeting deleted successfully.");
-  };
-
-  const postAnnouncement = (event) => {
-    event.preventDefault();
-
-    if (
-      !announcementForm.title.trim() ||
-      !announcementForm.message.trim()
-    ) {
-      showError("Please enter an announcement title and message.");
+  const handleSaveAttendance = async (e) => {
+    e.preventDefault();
+    if (!attendanceMeetingId) {
+      setError("Please select a meeting to record attendance.");
       return;
     }
 
-    // BACKEND: POST /api/announcements
+    const records = members
+      .filter((m) => m.status === "active")
+      .map((m) => ({
+        membership_id: m.id,
+        status: attendanceMap[m.id] || "present",
+      }));
 
-    setAnnouncements((current) => [
-      {
-        id: Date.now(),
+    if (records.length === 0) {
+      setError("No active members found to record attendance.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError("");
+    try {
+      await axiosClient.post(`/meetings/${attendanceMeetingId}/attendance`, {
+        records,
+      });
+      showFeedback(`Attendance saved for ${records.length} members.`);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handlePublishAnnouncement = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError("");
+    try {
+      await axiosClient.post(`/chamas/${chamaId}/announcements`, {
         title: announcementForm.title.trim(),
-        message: announcementForm.message.trim(),
-        date: getToday(),
-      },
-      ...current,
-    ]);
+        content: announcementForm.content.trim(),
+      });
 
-    setAnnouncementForm({
-      title: "",
-      message: "",
-      emailNotification: false,
-    });
-
-    showSuccess("Announcement published successfully.");
-  };
-  const deleteAnnouncement = (id) => {
-    const announcement = announcements.find(
-      (item) => item.id === id
-    );
-
-    if (!announcement) return;
-
-    const confirmed = window.confirm(
-      `Are you sure you want to delete "${announcement.title}"?`
-    );
-
-    if (!confirmed) return;
-
-    // BACKEND: DELETE /api/announcements/${id}
-
-    setAnnouncements((current) =>
-      current.filter((item) => item.id !== id)
-    );
-
-    showSuccess("Announcement removed successfully.");
-  };
-
-  const handleAttachments = (event) => {
-    const selectedFiles = Array.from(event.target.files || []);
-
-    if (selectedFiles.length === 0) return;
-
-    const allowedFiles = selectedFiles.filter((file) => {
-      const isPdf = file.type === "application/pdf";
-      const isImage = file.type.startsWith("image/");
-
-      return isPdf || isImage;
-    });
-
-    if (allowedFiles.length !== selectedFiles.length) {
-      showError("Only PDF files and images are allowed.");
-    } else {
-      setError("");
+      setAnnouncementForm({ title: "", content: "" });
+      showFeedback("Announcement published to members.");
+      await fetchSecretaryData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSubmitting(false);
     }
-
-    setAttachments((current) => [...current, ...allowedFiles]);
-    event.target.value = "";
   };
 
-  const removeAttachment = (index) => {
-    setAttachments((current) =>
-      current.filter((_, i) => i !== index)
-    );
-  };
-
-  const saveMinutes = (event) => {
-    event.preventDefault();
-
-    if (
-      !minutesForm.title.trim() ||
-      !minutesForm.date ||
-      minutesForm.attendance === "" ||
-      !minutesForm.content.trim()
-    ) {
-      showError("Please complete all meeting minutes details.");
-      return;
+  const deleteAnnouncement = async (id) => {
+    setSubmitting(true);
+    setError("");
+    try {
+      await axiosClient.delete(`/announcements/${id}`);
+      showFeedback("Announcement deleted.");
+      await fetchSecretaryData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSubmitting(false);
     }
-
-    const attendance = Number(minutesForm.attendance);
-
-    if (!Number.isInteger(attendance) || attendance < 0) {
-      showError("Attendance must be a valid non-negative whole number.");
-      return;
-    }
-
-    // BACKEND: POST /api/meetings/minutes
-
-    const newMinutes = {
-      id: Date.now(),
-      title: minutesForm.title.trim(),
-      date: minutesForm.date,
-      attendance,
-      content: minutesForm.content.trim(),
-      attachments: attachments.map((file) => file.name),
-      status: "Draft",
-    };
-
-    setMinutes((current) => [newMinutes, ...current]);
-
-    setMinutesForm({
-      title: "",
-      date: "",
-      attendance: "",
-      content: "",
-    });
-
-    setAttachments([]);
-
-    showSuccess("Meeting minutes saved as a draft.");
   };
 
-  const publishMinutes = (id) => {
-    const confirmed = window.confirm(
-      "Are you sure you want to publish these meeting minutes?"
-    );
-
-    if (!confirmed) return;
-
-    // BACKEND: PATCH /api/meetings/minutes/${id}/publish
-
-    setMinutes((current) =>
-      current.map((item) =>
-        item.id === id
-          ? { ...item, status: "Published" }
-          : item
-      )
-    );
-
-    setSelectedMinutes(null);
-    showSuccess("Meeting minutes published successfully.");
-  };
-
-  const filteredMembers = members.filter((member) =>
-    `${member.name} ${member.phone} ${member.email}`
-      .toLowerCase()
-      .includes(search.toLowerCase().trim())
+  const recordedMeetingIds = new Set(minutesList.map((m) => m.meeting_id));
+  const availableMeetingsForMinutes = meetings.filter(
+    (m) => !recordedMeetingIds.has(m.id)
   );
 
   return (
     <div className="space-y-6">
       <div>
-        <p className="text-sm font-medium text-green-800">
-          Chama Administration
-        </p>
-
+        <p className="text-sm font-medium text-green-800">Chama Secretariat</p>
         <h1 className="mt-1 text-2xl font-bold text-green-950">
-          Secretary Dashboard
+          Welcome back, {user?.full_name || "Secretary"}
         </h1>
-
         <p className="mt-1 text-sm text-gray-500">
-          Manage meetings, announcements, minutes and member records.
+          Schedule meetings, publish minutes, post announcements, and maintain member records.
         </p>
       </div>
 
-      {(message || error) && (
-        <div
-          className={`flex items-center justify-between rounded-lg border p-3 text-sm ${
-            error
-              ? "border-gray-300 bg-gray-50 text-gray-800"
-              : "border-green-200 bg-green-50 text-green-800"
-          }`}
-        >
-          <span>{error || message}</span>
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+          {error}
+        </div>
+      )}
 
-          <button
-            type="button"
-            onClick={() => {
-              setMessage("");
-              setError("");
-            }}
-            className="ml-3 font-semibold underline"
-          >
-            Dismiss
-          </button>
+      {message && (
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-800">
+          {message}
         </div>
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          title="Total Members"
-          value={members.length}
-          description="Registered Chama members"
-          icon={Users}
-        />
-
-        <StatCard
-          title="Upcoming Meetings"
-          value={meetings.length}
-          description="Scheduled meetings"
+          title="Scheduled Meetings"
+          value={loading ? "..." : meetings.length}
           icon={CalendarDays}
         />
-
+        <StatCard
+          title="Recorded Minutes"
+          value={loading ? "..." : minutesList.length}
+          icon={BookOpen}
+        />
         <StatCard
           title="Announcements"
-          value={announcements.length}
-          description="Published announcements"
+          value={loading ? "..." : announcements.length}
           icon={Megaphone}
         />
-
         <StatCard
-          title="Meeting Minutes"
-          value={minutes.length}
-          description="Saved meeting records"
-          icon={FileText}
+          title="Registered Members"
+          value={loading ? "..." : members.length}
+          icon={Users}
         />
       </div>
 
-      <Panel title="Schedule a Meeting">
-        <form onSubmit={scheduleMeeting} className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                Meeting Title
-              </label>
-
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <Panel title="Schedule Meeting">
+          <form onSubmit={handleScheduleMeeting} className="space-y-3">
+            <label className="block text-xs font-semibold text-gray-600">
+              Meeting Title
               <input
                 type="text"
+                placeholder="e.g. Monthly General Meeting"
                 value={meetingForm.title}
                 onChange={(e) =>
-                  setMeetingForm({
-                    ...meetingForm,
-                    title: e.target.value,
-                  })
+                  setMeetingForm({ ...meetingForm, title: e.target.value })
                 }
-                placeholder="Enter meeting title"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-700"
+                className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-green-800"
+                required
               />
+            </label>
+
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block text-xs font-semibold text-gray-600">
+                Date
+                <input
+                  type="date"
+                  value={meetingForm.date}
+                  onChange={(e) =>
+                    setMeetingForm({ ...meetingForm, date: e.target.value })
+                  }
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-green-800"
+                  required
+                />
+              </label>
+              <label className="block text-xs font-semibold text-gray-600">
+                Time
+                <input
+                  type="time"
+                  value={meetingForm.time}
+                  onChange={(e) =>
+                    setMeetingForm({ ...meetingForm, time: e.target.value })
+                  }
+                  className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-green-800"
+                  required
+                />
+              </label>
             </div>
 
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                Meeting Venue
-              </label>
-
+            <label className="block text-xs font-semibold text-gray-600">
+              Venue / Meeting Link
               <input
                 type="text"
+                placeholder="e.g. Nairobi Community Hall / Google Meet"
                 value={meetingForm.venue}
                 onChange={(e) =>
-                  setMeetingForm({
-                    ...meetingForm,
-                    venue: e.target.value,
-                  })
+                  setMeetingForm({ ...meetingForm, venue: e.target.value })
                 }
-                placeholder="Enter venue"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-700"
+                className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-green-800"
+                required
               />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                Meeting Date
-              </label>
-
-              <input
-                type="date"
-                min={getToday()}
-                value={meetingForm.date}
-                onChange={(e) =>
-                  setMeetingForm({
-                    ...meetingForm,
-                    date: e.target.value,
-                  })
-                }
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-700"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                Meeting Time
-              </label>
-
-              <input
-                type="time"
-                value={meetingForm.time}
-                onChange={(e) =>
-                  setMeetingForm({
-                    ...meetingForm,
-                    time: e.target.value,
-                  })
-                }
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-700"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              Meeting Agenda
             </label>
-
-            <textarea
-              rows="3"
-              value={meetingForm.agenda}
-              onChange={(e) =>
-                setMeetingForm({
-                  ...meetingForm,
-                  agenda: e.target.value,
-                })
-              }
-              placeholder="Enter the meeting agenda..."
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-700"
-            />
-          </div>
-
-          <label className="flex items-center gap-2 text-sm text-gray-600">
-            <input
-              type="checkbox"
-              checked={meetingForm.emailReminder}
-              onChange={(e) =>
-                setMeetingForm({
-                  ...meetingForm,
-                  emailReminder: e.target.checked,
-                })
-              }
-              className="accent-green-800"
-            />
-            Send email reminders to members
-          </label>
-
-          <ActionButton type="submit">
-            <span className="flex items-center gap-2">
-              <Plus size={17} />
+            <label className="block text-xs font-semibold text-gray-600">
+              Agenda
+              <textarea
+                rows="3"
+                placeholder="Key items to discuss..."
+                value={meetingForm.agenda}
+                onChange={(e) =>
+                  setMeetingForm({ ...meetingForm, agenda: e.target.value })
+                }
+                className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-green-800"
+                required
+              />
+            </label>
+            <ActionButton type="submit" loading={submitting}>
               Schedule Meeting
-            </span>
-          </ActionButton>
-        </form>
-      </Panel>
+            </ActionButton>
+          </form>
+        </Panel>
 
-      <Panel title="Upcoming Meetings">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[700px] text-left text-sm">
-            <thead className="bg-gray-50 text-gray-600">
-              <tr>
-                <th className="p-3">Meeting</th>
-                <th className="p-3">Date</th>
-                <th className="p-3">Time</th>
-                <th className="p-3">Venue</th>
-                <th className="p-3">Status</th>
-                <th className="p-3">Actions</th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-gray-100">
-              {meetings.map((meeting) => (
-                <tr key={meeting.id}>
-                  <td className="p-3 font-medium text-gray-800">
-                    {meeting.title}
-                  </td>
-
-                  <td className="p-3">{meeting.date}</td>
-                  <td className="p-3">{meeting.time}</td>
-                  <td className="p-3">{meeting.venue}</td>
-
-                  <td className="p-3">
-                    <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-800">
-                      {meeting.status}
-                    </span>
-                  </td>
-
-                  <td className="p-3">
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => viewMeeting(meeting)}
-                        className="text-green-800 hover:text-green-950"
-                        title="View meeting"
-                      >
-                        <Eye size={17} />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => deleteMeeting(meeting.id)}
-                        className="text-gray-500 hover:text-red-700"
-                        title="Delete meeting"
-                      >
-                        <Trash2 size={17} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-
-              {meetings.length === 0 && (
-                <tr>
-                  <td
-                    colSpan="6"
-                    className="p-5 text-center text-gray-500"
+        <Panel title="Scheduled Meetings" className="lg:col-span-2">
+          {meetings.length === 0 ? (
+            <p className="py-8 text-center text-sm text-gray-500">
+              {loading ? "Loading meetings..." : "No meetings scheduled yet"}
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {meetings.map((meeting) => {
+                const date = meeting.meeting_date
+                  ? new Date(meeting.meeting_date)
+                  : null;
+                return (
+                  <div
+                    key={meeting.id}
+                    className="flex items-start justify-between gap-3 rounded-lg border border-gray-100 p-3"
                   >
-                    No meetings scheduled yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
+                    <div>
+                      <p className="font-medium text-gray-900">
+                        {meeting.title}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {date
+                          ? `${date.toLocaleDateString("en-KE")} at ${date.toLocaleTimeString(
+                              "en-KE",
+                              { hour: "2-digit", minute: "2-digit" }
+                            )}`
+                          : "Date TBD"}{" "}
+                        · {meeting.venue || "TBD"}
+                      </p>
+                      {meeting.agenda && (
+                        <p className="mt-2 text-sm text-gray-600">
+                          {meeting.agenda}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => deleteMeeting(meeting.id)}
+                      className="rounded-lg p-2 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                      title="Delete Meeting"
+                    >
+                      <Trash2 size={17} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Panel>
 
-      <Panel title="Post an Announcement">
-        <form onSubmit={postAnnouncement} className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              Announcement Headline
+        <Panel title="Publish Meeting Minutes" className="lg:col-span-2">
+          <form onSubmit={handleSaveMinutes} className="space-y-3">
+            <label className="block text-xs font-semibold text-gray-600">
+              Select Meeting
+              <select
+                value={minutesForm.meeting_id}
+                onChange={(e) =>
+                  setMinutesForm({ ...minutesForm, meeting_id: e.target.value })
+                }
+                className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-green-800"
+                required
+              >
+                <option value="">Choose a scheduled meeting</option>
+                {availableMeetingsForMinutes.map((meeting) => (
+                  <option key={meeting.id} value={meeting.id}>
+                    {meeting.title} (
+                    {meeting.meeting_date
+                      ? new Date(meeting.meeting_date).toLocaleDateString("en-KE")
+                      : ""}
+                    )
+                  </option>
+                ))}
+              </select>
             </label>
+            <label className="block text-xs font-semibold text-gray-600">
+              Meeting Minutes & Resolutions
+              <textarea
+                rows="4"
+                placeholder="Write discussions, resolutions, and action items..."
+                value={minutesForm.content}
+                onChange={(e) =>
+                  setMinutesForm({ ...minutesForm, content: e.target.value })
+                }
+                className="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-green-800"
+                required
+              />
+            </label>
+            <label className="block text-xs font-semibold text-gray-600">
+              Attach Signed PDF / Photo (Optional)
+              <input
+                type="file"
+                accept=".pdf,image/*"
+                onChange={(e) =>
+                  setMinutesForm({
+                    ...minutesForm,
+                    attachmentFile: e.target.files?.[0] || null,
+                  })
+                }
+                className="mt-1 w-full text-sm"
+              />
+            </label>
+            {minutesForm.attachmentFile && (
+              <p className="text-xs text-gray-500">
+                Selected: {minutesForm.attachmentFile.name}
+              </p>
+            )}
+            <ActionButton type="submit" loading={submitting}>
+              Save & Publish Minutes
+            </ActionButton>
+          </form>
+        </Panel>
 
+        <Panel title="Meeting Minutes">
+          {minutesList.length === 0 ? (
+            <p className="py-8 text-center text-sm text-gray-500">
+              {loading ? "Loading minutes..." : "No meeting minutes recorded yet"}
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {minutesList.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setSelectedMinutes(item)}
+                  className="flex w-full items-center justify-between rounded-lg border border-gray-100 p-3 text-left hover:bg-gray-50"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {item.meeting_title || `Meeting #${item.meeting_id}`}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {item.meeting_date
+                        ? new Date(item.meeting_date).toLocaleDateString("en-KE")
+                        : "-"}
+                    </p>
+                  </div>
+                  <Eye size={16} />
+                </button>
+              ))}
+            </div>
+          )}
+        </Panel>
+
+        <Panel title="Publish Announcement">
+          <form onSubmit={handlePublishAnnouncement} className="space-y-3">
             <input
               type="text"
+              placeholder="Announcement Title"
               value={announcementForm.title}
               onChange={(e) =>
                 setAnnouncementForm({
@@ -662,499 +552,220 @@ export default function SecretaryDashboard() {
                   title: e.target.value,
                 })
               }
-              placeholder="Enter announcement headline"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-700"
+              className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-green-800"
+              required
             />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              Announcement Message
-            </label>
-
             <textarea
               rows="4"
-              value={announcementForm.message}
+              placeholder="Write announcement message..."
+              value={announcementForm.content}
               onChange={(e) =>
                 setAnnouncementForm({
                   ...announcementForm,
-                  message: e.target.value,
-                })
-              }
-              placeholder="Write your announcement..."
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-700"
-            />
-          </div>
-
-          <label className="flex items-center gap-2 text-sm text-gray-600">
-            <input
-              type="checkbox"
-              checked={announcementForm.emailNotification}
-              onChange={(e) =>
-                setAnnouncementForm({
-                  ...announcementForm,
-                  emailNotification: e.target.checked,
-                })
-              }
-              className="accent-green-800"
-            />
-            Also send this announcement by email
-          </label>
-
-          <ActionButton type="submit">
-            <span className="flex items-center gap-2">
-              <Megaphone size={17} />
-              Publish Announcement
-            </span>
-          </ActionButton>
-        </form>
-      </Panel>
-
-      <Panel title="Recent Announcements">
-        <div className="space-y-3">
-          {announcements.map((announcement) => (
-            <div
-              key={announcement.id}
-              className="flex flex-col justify-between gap-3 rounded-lg border border-gray-200 p-4 sm:flex-row sm:items-center"
-            >
-              <div>
-                <h3 className="font-semibold text-gray-800">
-                  {announcement.title}
-                </h3>
-
-                <p className="mt-1 text-sm text-gray-500">
-                  {announcement.message}
-                </p>
-
-                <p className="mt-2 text-xs text-gray-400">
-                  Published: {announcement.date}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => deleteAnnouncement(announcement.id)}
-                className="flex items-center gap-2 self-start text-sm font-medium text-gray-600 hover:text-red-700 sm:self-center"
-              >
-                <Trash2 size={16} />
-                Delete
-              </button>
-            </div>
-          ))}
-
-          {announcements.length === 0 && (
-            <p className="py-5 text-center text-sm text-gray-500">
-              No announcements have been published yet.
-            </p>
-          )}
-        </div>
-      </Panel>
-
-      {/* Member register */}
-      <Panel title="Member Register">
-        <div className="relative mb-4 max-w-sm">
-          <Search
-            size={18}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-          />
-
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search members..."
-            className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-3 text-sm outline-none focus:border-green-700"
-          />
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[650px] text-left text-sm">
-            <thead className="bg-gray-50 text-gray-600">
-              <tr>
-                <th className="p-3">Member Name</th>
-                <th className="p-3">Phone</th>
-                <th className="p-3">Email</th>
-                <th className="p-3">Date Joined</th>
-                <th className="p-3">Status</th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-gray-100">
-              {filteredMembers.map((member) => (
-                <tr key={member.id}>
-                  <td className="p-3 font-medium text-gray-800">
-                    {member.name}
-                  </td>
-
-                  <td className="p-3">{member.phone}</td>
-                  <td className="p-3">{member.email}</td>
-                  <td className="p-3">{member.joined}</td>
-
-                  <td className="p-3">
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        member.status === "Active"
-                          ? "bg-green-100 text-green-800"
-                          : "bg-gray-100 text-gray-600"
-                      }`}
-                    >
-                      {member.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-
-              {filteredMembers.length === 0 && (
-                <tr>
-                  <td
-                    colSpan="5"
-                    className="p-5 text-center text-gray-500"
-                  >
-                    No members found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
-
-      <Panel title="Meeting Minutes Management">
-        <form onSubmit={saveMinutes} className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                Meeting Title
-              </label>
-
-              <input
-                type="text"
-                value={minutesForm.title}
-                onChange={(e) =>
-                  setMinutesForm({
-                    ...minutesForm,
-                    title: e.target.value,
-                  })
-                }
-                placeholder="Meeting title"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-700"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                Meeting Date
-              </label>
-
-              <input
-                type="date"
-                value={minutesForm.date}
-                onChange={(e) =>
-                  setMinutesForm({
-                    ...minutesForm,
-                    date: e.target.value,
-                  })
-                }
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-700"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                Number of Attendees
-              </label>
-
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={minutesForm.attendance}
-                onChange={(e) =>
-                  setMinutesForm({
-                    ...minutesForm,
-                    attendance: e.target.value,
-                  })
-                }
-                placeholder="Enter attendance"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-700"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              Meeting Minutes
-            </label>
-
-            <textarea
-              rows="5"
-              value={minutesForm.content}
-              onChange={(e) =>
-                setMinutesForm({
-                  ...minutesForm,
                   content: e.target.value,
                 })
               }
-              placeholder="Write the meeting minutes..."
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 outline-none focus:border-green-700"
+              className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-green-800"
+              required
             />
-          </div>
+            <ActionButton type="submit" loading={submitting}>
+              Publish Announcement
+            </ActionButton>
+          </form>
+        </Panel>
 
-          <div className="rounded-lg border border-dashed border-gray-300 p-4">
-            <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
-              <Upload size={18} />
-              Attach Minutes PDF or Meeting Photos
-            </div>
-
-            <input
-              type="file"
-              accept=".pdf,image/*"
-              multiple
-              onChange={handleAttachments}
-              className="mt-3 block w-full text-sm text-gray-500 file:mr-3 file:rounded-lg file:border-0 file:bg-green-100 file:px-4 file:py-2 file:font-medium file:text-green-800"
-            />
-
-            {attachments.length > 0 && (
-              <div className="mt-3 space-y-2">
-                {attachments.map((file, index) => (
-                  <div
-                    key={`${file.name}-${index}`}
-                    className="flex items-center justify-between rounded-md bg-gray-50 px-3 py-2 text-sm"
-                  >
-                    <span className="truncate text-gray-700">
-                      {file.name}
-                    </span>
-
-                    <button
-                      type="button"
-                      onClick={() => removeAttachment(index)}
-                      className="ml-3 text-gray-500 hover:text-red-700"
-                      title="Remove attachment"
-                    >
-                      <X size={16} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <p className="mt-2 text-xs text-gray-400">
-              Selected files are listed for this demo. Actual file storage
-              will be connected to the backend later.
+        <Panel title="Announcements" className="lg:col-span-2">
+          {announcements.length === 0 ? (
+            <p className="py-8 text-center text-sm text-gray-500">
+              {loading
+                ? "Loading announcements..."
+                : "No announcements published yet"}
             </p>
-          </div>
+          ) : (
+            <div className="space-y-3">
+              {announcements.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-start justify-between gap-3 rounded-lg border border-gray-100 p-3"
+                >
+                  <div>
+                    <p className="font-medium text-gray-900">{item.title}</p>
+                    <p className="text-xs text-gray-500">
+                      Posted{" "}
+                      {item.created_at
+                        ? new Date(item.created_at).toLocaleDateString("en-KE")
+                        : "Today"}
+                    </p>
+                    <p className="mt-2 text-sm text-gray-600">{item.content}</p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => deleteAnnouncement(item.id)}
+                    className="rounded-lg p-2 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                    title="Delete Announcement"
+                  >
+                    <Trash2 size={17} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
 
-          <ActionButton type="submit">
-            Save Minutes as Draft
-          </ActionButton>
-        </form>
-
-        <div className="mt-6">
-          <h3 className="mb-3 font-semibold text-gray-800">
-            Saved Meeting Minutes
-          </h3>
-
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[600px] text-left text-sm">
-              <thead className="bg-gray-50 text-gray-600">
-                <tr>
-                  <th className="p-3">Meeting</th>
-                  <th className="p-3">Date</th>
-                  <th className="p-3">Attendance</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3">Actions</th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-gray-100">
-                {minutes.map((item) => (
-                  <tr key={item.id}>
-                    <td className="p-3 font-medium text-gray-800">
-                      {item.title}
-                    </td>
-
-                    <td className="p-3">{item.date}</td>
-                    <td className="p-3">{item.attendance}</td>
-
-                    <td className="p-3">
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          item.status === "Published"
-                            ? "bg-green-100 text-green-800"
-                            : "bg-gray-100 text-gray-700"
-                        }`}
-                      >
-                        {item.status}
-                      </span>
-                    </td>
-
-                    <td className="p-3">
-                      <div className="flex items-center gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedMinutes(item)}
-                          className="flex items-center gap-1 text-green-800 hover:underline"
-                          title="View minutes"
-                        >
-                          <Eye size={16} />
-                          View
-                        </button>
-
-                        {item.status === "Draft" && (
-                          <button
-                            type="button"
-                            onClick={() => publishMinutes(item.id)}
-                            className="font-medium text-green-800 hover:underline"
-                          >
-                            Publish
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
+        <Panel title="Record Meeting Attendance" className="lg:col-span-3">
+          <form onSubmit={handleSaveAttendance} className="space-y-4">
+            <label className="block text-xs font-semibold text-gray-600">
+              Select Meeting
+              <select
+                value={attendanceMeetingId}
+                onChange={(e) => handleSelectAttendanceMeeting(e.target.value)}
+                className="mt-1 w-full max-w-md rounded-lg border px-3 py-2 text-sm outline-none focus:border-green-800"
+                required
+              >
+                <option value="">Choose a meeting</option>
+                {meetings.map((meeting) => (
+                  <option key={meeting.id} value={meeting.id}>
+                    {meeting.title}
+                  </option>
                 ))}
+              </select>
+            </label>
+            {attendanceMeetingId && (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[600px] text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200 text-xs uppercase text-gray-500">
+                        <th className="px-3 py-3">Member No.</th>
+                        <th className="px-3 py-3">Member Name</th>
+                        <th className="px-3 py-3">Attendance Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {members
+                        .filter((member) => member.status === "active")
+                        .map((member) => (
+                          <tr key={member.id}>
+                            <td className="px-3 py-3">
+                              {member.member_number || "-"}
+                            </td>
+                            <td className="px-3 py-3">{member.full_name}</td>
+                            <td className="px-3 py-3">
+                              <select
+                                value={attendanceMap[member.id] || "present"}
+                                onChange={(e) =>
+                                  setAttendanceMap({
+                                    ...attendanceMap,
+                                    [member.id]: e.target.value,
+                                  })
+                                }
+                                className="rounded-lg border px-3 py-1.5 text-sm"
+                              >
+                                <option value="present">Present</option>
+                                <option value="absent">Absent</option>
+                                <option value="excused">Excused</option>
+                              </select>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+                <ActionButton type="submit" loading={submitting}>
+                  Save Attendance Roll-Call
+                </ActionButton>
+              </>
+            )}
+          </form>
+        </Panel>
 
-                {minutes.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan="5"
-                      className="p-5 text-center text-gray-500"
-                    >
-                      No meeting minutes saved yet.
-                    </td>
+        <Panel title="Registered Members" className="lg:col-span-3">
+          {members.length === 0 ? (
+            <p className="py-8 text-center text-sm text-gray-500">
+              {loading ? "Loading members..." : "No registered members found"}
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[700px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-xs uppercase text-gray-500">
+                    <th className="px-3 py-3">Member No.</th>
+                    <th className="px-3 py-3">Full Name</th>
+                    <th className="px-3 py-3">Phone</th>
+                    <th className="px-3 py-3">Email</th>
+                    <th className="px-3 py-3">Role</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </Panel>
-
-      {selectedMeeting && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
-            <div className="mb-4 flex items-start justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-green-950">
-                  Meeting Details
-                </h2>
-
-                <p className="mt-1 text-sm text-gray-500">
-                  {selectedMeeting.title}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSelectedMeeting(null)}
-                className="text-gray-500 hover:text-gray-800"
-              >
-                <X size={20} />
-              </button>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {members.map((member) => (
+                    <tr key={member.id}>
+                      <td className="px-3 py-3">
+                        {member.member_number || "-"}
+                      </td>
+                      <td className="px-3 py-3 font-medium">
+                        {member.full_name}
+                      </td>
+                      <td className="px-3 py-3">
+                        {member.phone_number || "-"}
+                      </td>
+                      <td className="px-3 py-3">{member.email}</td>
+                      <td className="px-3 py-3 capitalize">
+                        {(member.role || "member").replace(/_/g, " ")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-
-            <div className="space-y-3 text-sm">
-              <p>
-                <strong>Date:</strong> {selectedMeeting.date}
-              </p>
-
-              <p>
-                <strong>Time:</strong> {selectedMeeting.time}
-              </p>
-
-              <p>
-                <strong>Venue:</strong> {selectedMeeting.venue}
-              </p>
-
-              <div>
-                <strong>Agenda:</strong>
-                <p className="mt-1 whitespace-pre-wrap text-gray-600">
-                  {selectedMeeting.agenda}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-end">
-              <ActionButton
-                type="button"
-                onClick={() => setSelectedMeeting(null)}
-              >
-                Close
-              </ActionButton>
-            </div>
-          </div>
-        </div>
-      )}
+          )}
+        </Panel>
+      </div>
 
       {selectedMinutes && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
-            <div className="mb-4 flex items-start justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+            <div className="mb-4 flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-xl font-bold text-green-950">
-                  Meeting Minutes
+                <h2 className="text-lg font-bold text-gray-900">
+                  {selectedMinutes.meeting_title ||
+                    `Meeting #${selectedMinutes.meeting_id}`}
                 </h2>
-
-                <p className="mt-1 text-sm text-gray-500">
-                  {selectedMinutes.title}
-                </p>
+                {selectedMinutes.meeting_date && (
+                  <p className="text-xs text-gray-500">
+                    {new Date(selectedMinutes.meeting_date).toLocaleDateString(
+                      "en-KE"
+                    )}
+                  </p>
+                )}
               </div>
-
               <button
                 type="button"
                 onClick={() => setSelectedMinutes(null)}
-                className="text-gray-500 hover:text-gray-800"
+                className="rounded-lg p-1 text-gray-500 hover:bg-gray-100"
+                aria-label="Close meeting minutes"
               >
-                <X size={20} />
+                <span aria-hidden="true">×</span>
               </button>
             </div>
-
-            <div className="space-y-4 text-sm">
-              <p>
-                <strong>Meeting Date:</strong> {selectedMinutes.date}
-              </p>
-
-              <p>
-                <strong>Attendance:</strong> {selectedMinutes.attendance} members
-              </p>
-
-              <p>
-                <strong>Status:</strong> {selectedMinutes.status}
-              </p>
-
-              <div>
-                <strong>Minutes:</strong>
-
-                <p className="mt-2 whitespace-pre-wrap rounded-lg bg-gray-50 p-4 leading-6 text-gray-700">
-                  {selectedMinutes.content}
-                </p>
-              </div>
-
-              {selectedMinutes.attachments?.length > 0 && (
-                <div>
-                  <strong>Attachments:</strong>
-
-                  <ul className="mt-2 list-inside list-disc text-gray-600">
-                    {selectedMinutes.attachments.map((file, index) => (
-                      <li key={`${file}-${index}`}>{file}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-6 flex flex-wrap justify-end gap-3">
-              {selectedMinutes.status === "Draft" && (
-                <ActionButton
-                  type="button"
-                  onClick={() => publishMinutes(selectedMinutes.id)}
-                >
-                  Publish Minutes
-                </ActionButton>
-              )}
-
+            <p className="whitespace-pre-wrap text-sm text-gray-700">
+              {selectedMinutes.minutes}
+            </p>
+            {selectedMinutes.file_url && (
+              <a
+                href={selectedMinutes.file_url}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-4 inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-xs font-semibold text-gray-700"
+              >
+                <ExternalLink size={15} />
+                Open Attached Document
+              </a>
+            )}
+            <div className="mt-6 flex justify-end">
               <ActionButton
                 type="button"
+                variant="outline"
                 onClick={() => setSelectedMinutes(null)}
               >
                 Close
@@ -1166,5 +777,3 @@ export default function SecretaryDashboard() {
     </div>
   );
 }
-
-

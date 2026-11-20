@@ -1,4 +1,3 @@
-
 import { Routes, Route } from "react-router-dom";
 
 import PublicLayout from "./components/PublicLayout";
@@ -14,6 +13,7 @@ import ChamaDetails from "./components/ChamaDetails";
 
 import Login from "./pages/auth/Login";
 import ForgotPassword from "./pages/auth/ForgotPassword";
+import ResetPassword from "./pages/auth/ResetPassword";
 import SignupChoice from "./pages/auth/SignupChoice";
 import JoinChama from "./pages/auth/JoinChama";
 import RegisterChama from "./pages/auth/RegisterChama";
@@ -21,7 +21,6 @@ import VerifyEmail from "./pages/auth/VerifyEmail";
 
 import DashboardRouter from "./routes/DashboardRouter";
 import ProtectedRoute from "./components/ProtectedRoute";
-
 import ErrorBoundary from "./components/ErrorBoundary";
 
 function App() {
@@ -40,6 +39,7 @@ function App() {
           {/* Authentication pages */}
           <Route path="/login" element={<Login />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/signup-choice" element={<SignupChoice />} />
           <Route path="/join-chama" element={<JoinChama />} />
           <Route path="/register-chama" element={<RegisterChama />} />
@@ -49,15 +49,8 @@ function App() {
         {/* Protected dashboard pages */}
         <Route element={<ProtectedRoute />}>
           <Route element={<DashboardLayout />}>
-            <Route
-              path="/dashboard"
-              element={<DashboardRouter />}
-            />
-
-            <Route
-              path="/dashboard/:section"
-              element={<DashboardSection />}
-            />
+            <Route path="/dashboard" element={<DashboardRouter />} />
+            <Route path="/dashboard/:section" element={<DashboardSection />} />
           </Route>
         </Route>
       </Routes>
@@ -66,4 +59,6 @@ function App() {
 }
 
 export default App;
+
+
 

@@ -1,5 +1,5 @@
-
 import React from "react";
+import { UserCircle } from "lucide-react";
 
 const Officials = ({ officials = [] }) => {
   return (
@@ -20,30 +20,39 @@ const Officials = ({ officials = [] }) => {
 
       {officials.length > 0 ? (
         <div className="grid gap-8 sm:grid-cols-2 md:grid-cols-3">
-          {officials.map((official) => (
-            <article
-              key={official.id || official.position}
-              className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
-            >
-              <div className="h-72 overflow-hidden bg-gray-100">
-                <img
-                  src={official.image || "/default-profile.png"}
-                  alt={official.name || "Chama official"}
-                  className="h-full w-full object-cover"
-                />
-              </div>
+          {officials.map((official) => {
+            const name = official.full_name || official.name || "Chama Official";
+            const position = (official.role || official.position || "Official")
+              .replace(/_/g, " ")
+              .toUpperCase();
+            const image = official.profile_image_url || official.image;
 
-              <div className="p-6 text-center">
-                <h3 className="text-xl font-bold text-[#123D2B]">
-                  {official.name || "Name not provided"}
-                </h3>
+            return (
+              <article
+                key={official.membership_id || official.id || name}
+                className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
+              >
+                <div className="flex h-64 items-center justify-center overflow-hidden bg-green-50">
+                  {image ? (
+                    <img
+                      src={image}
+                      alt={name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <UserCircle size={84} className="text-[#123D2B]/40" />
+                  )}
+                </div>
 
-                <p className="mt-2 font-medium text-[#1F6B49]">
-                  {official.position}
-                </p>
-              </div>
-            </article>
-          ))}
+                <div className="p-6 text-center">
+                  <h3 className="text-xl font-bold text-[#123D2B]">{name}</h3>
+                  <p className="mt-2 text-xs font-bold tracking-wider text-[#1F6B49]">
+                    {position}
+                  </p>
+                </div>
+              </article>
+            );
+          })}
         </div>
       ) : (
         <p className="rounded-xl bg-[#F3F5F3] p-8 text-center text-gray-600">
@@ -55,5 +64,6 @@ const Officials = ({ officials = [] }) => {
 };
 
 export default Officials;
+
 
 

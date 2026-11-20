@@ -1,70 +1,47 @@
-
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Users,
-  UserPlus,
+  Clock,
   Wallet,
   HandCoins,
-  CheckCircle,
-  XCircle,
-  Clock,
   Settings,
-  ClipboardList,
-  Eye,
+  History,
+  FolderPlus,
 } from "lucide-react";
-
+import { useAuth } from "../../context/AuthContext";
+import axiosClient, { getErrorMessage } from "../../api/axiosClient";
 import {
-  StatCard,
-  Panel,
   ActionButton,
+  Panel,
+  StatCard,
 } from "./DashboardShared";
 
-// DEMO DATA: Replace with Flask API data later.
-const initialRequests = [
-  {
-    id: 1,
-    name: "Ann Stacia",
-    email: "ann@example.com",
-    position: "Member",
-    phone: "0712345678",
-    reason: "I would like to join and contribute monthly.",
-    date: "12 Nov 2026",
-  },
-  {
-    id: 2,
-    name: "Rihanna Tanya",
-    email: "rihanna@example.com",
-    position: "Member",
-    phone: "0723456789",
-    reason: "I am interested in saving with this chama.",
-    date: "13 Nov 2026",
-  },
-];
-
-const members = [
-  { id: 1, name: "Ann Stacia" },
-  { id: 2, name: "Rihanna Tanya" },
-];
-
-const auditRecords = [
-  {
-    id: 1,
-    official: "Admin",
-    action: "Edited contribution record",
-    date: "13 Nov 2026, 10:30 AM",
-  },
-  {
-    id: 2,
-    official: "Treasurer",
-    action: "Approved loan",
-    date: "12 Nov 2026, 02:15 PM",
-  },
-];
+const formatCurrency = (amount) =>
+  new Intl.NumberFormat("en-KE", {
+    style: "currency",
+    currency: "KES",
+    maximumFractionDigits: 0,
+  }).format(Number(amount || 0));
 
 export default function AdminDashboard() {
-  const [requests, setRequests] = useState(initialRequests);
+  const { user } = useAuth();
+  const chamaId = user?.chama_id;
 
-  const [selectedRequest, setSelectedRequest] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const [stats, setStats] = useState({
+    totalMembers: 0,
+    pendingCount: 0,
+    totalContributions: 0,
+    activeLoansCount: 0,
+  });
+
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [activeMembers, setActiveMembers] = useState([]);
+  const [contributionRules, setContributionRules] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
 
   const [officials, setOfficials] = useState({
     treasurer: "",
@@ -72,589 +49,631 @@ export default function AdminDashboard() {
   });
 
   const [rules, setRules] = useState({
-    monthlyContribution: "",
-    dueDay: "",
-    latePenalty: "",
-    interestRate: "",
-    maxLoan: "",
+    monthlyContribution: "2000",
+    dueDay: "5",
+    latePenalty: "100",
+    interestRate: "5",
+    maxLoan: "50000",
   });
 
-  const [message, setMessage] = useState("");
+  const [projectForm, setProjectForm] = useState({
+    title: "",
+    description: "",
+    amount_invested: "",
+    status: "ongoing",
+    image_url: "",
+  });
 
-  const handleRequest = (id, decision) => {
-    const confirmed = window.confirm(
-      `Are you sure you want to ${decision} this join request?`
-    );
+  const [submitting, setSubmitting] = useState(false);
 
-    if (!confirmed) return;
-
-    // BACKEND CONNECTION:
-    // PATCH /api/join-requests/${id}
-    // Send { status: decision } to Flask.
-
-    setRequests((current) =>
-      current.filter((request) => request.id !== id)
-    );
-
-    setSelectedRequest(null);
-
-    setMessage(
-      `Join request ${decision} successfully (demo).`
-    );
-  };
-
-  const handleOfficialChange = (event) => {
-    const { name, value } = event.target;
-
-    setOfficials((current) => ({
-      ...current,
-      [name]: value,
-    }));
-  };
-
-  const handleRuleChange = (event) => {
-    const { name, value } = event.target;
-
-    setRules((current) => ({
-      ...current,
-      [name]: value,
-    }));
-  };
-
-  const saveOfficials = (event) => {
-    event.preventDefault();
-    setMessage("");
-
-    const selected = Object.values(officials);
-
-    if (selected.some((id) => !id)) {
-      setMessage("Please select both officials.");
+  const fetchDashboardData = useCallback(async () => {
+    if (!chamaId) {
+      setLoading(false);
       return;
     }
 
-    if (new Set(selected).size !== selected.length) {
-      setMessage(
-        "The treasurer and secretary must be different members."
+    setLoading(true);
+    setError("");
+    try {
+      const [
+        pendingRes,
+        activeRes,
+        summaryRes,
+        rulesRes,
+        chamasRes,
+        auditRes,
+      ] = await Promise.all([
+        axiosClient.get(`/chamas/${chamaId}/memberships`, {
+          params: { status: "pending", per_page: 50 },
+        }),
+        axiosClient.get(`/chamas/${chamaId}/memberships`, {
+          params: { status: "active", per_page: 100 },
+        }),
+        axiosClient.get(`/chamas/${chamaId}/financial-summary`),
+        axiosClient.get(`/chamas/${chamaId}/contribution-types`),
+        axiosClient.get("/chamas", { params: { per_page: 100 } }),
+        axiosClient.get(`/chamas/${chamaId}/audit-logs`, {
+          params: { per_page: 8 },
+        }),
+      ]);
+
+      const pendingItems = pendingRes.data?.items || [];
+      const activeItems = activeRes.data?.items || [];
+      const summary = summaryRes.data || {};
+      const typesList = Array.isArray(rulesRes.data) ? rulesRes.data : [];
+      const allChamas = chamasRes.data?.items || [];
+      const currentChama = allChamas.find(
+        (c) => Number(c.id) === Number(chamaId)
       );
-      return;
+
+      setPendingRequests(pendingItems);
+      setActiveMembers(activeItems);
+      setContributionRules(typesList);
+      setAuditLogs(auditRes.data?.items || []);
+
+      setStats({
+        totalMembers: activeRes.data?.total ?? activeItems.length,
+        pendingCount: pendingRes.data?.total ?? pendingItems.length,
+        totalContributions: Number(summary.total_contributions || 0),
+        activeLoansCount: Number(summary.active_loans_count || 0),
+      });
+
+      const currentTreasurer = activeItems.find((m) => m.role === "treasurer");
+      const currentSecretary = activeItems.find((m) => m.role === "secretary");
+      setOfficials({
+        treasurer: currentTreasurer ? String(currentTreasurer.id) : "",
+        secretary: currentSecretary ? String(currentSecretary.id) : "",
+      });
+
+      const monthlyRule =
+          typesList.find((t) => t.frequency === "monthly") || typesList.at(0);
+
+
+      setRules({
+        monthlyContribution: monthlyRule ? String(monthlyRule.amount) : "2000",
+        dueDay: monthlyRule?.due_day ? String(monthlyRule.due_day) : "5",
+        latePenalty:
+          monthlyRule?.penalty_amount !== null &&
+          monthlyRule?.penalty_amount !== undefined
+            ? String(monthlyRule.penalty_amount)
+            : "100",
+        interestRate: currentChama?.default_interest_rate
+          ? String(currentChama.default_interest_rate)
+          : "5",
+        maxLoan: currentChama?.max_loan_amount
+          ? String(currentChama.max_loan_amount)
+          : "50000",
+      });
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLoading(false);
     }
+  }, [chamaId]);
 
-    // BACKEND CONNECTION:
-    // POST /api/officials
-    // Send the selected official IDs to Flask.
+  useEffect(() => {
+    const timeoutId = window.setTimeout(fetchDashboardData, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [fetchDashboardData]);
 
-    console.log("Officials:", officials);
-
-    setMessage("Officials saved successfully (demo).");
+  const showFeedback = (text) => {
+    setError("");
+    setMessage(text);
+    setTimeout(() => setMessage(""), 4500);
   };
 
-  const saveRules = (event) => {
-    event.preventDefault();
-    setMessage("");
+  const handleRequest = async (membershipId, newStatus, name) => {
+    setSubmitting(true);
+    setError("");
+    try {
+      await axiosClient.patch(`/memberships/${membershipId}`, {
+        status: newStatus,
+      });
+      showFeedback(
+        newStatus === "active"
+          ? `${name} has been approved and notified via email.`
+          : `${name}'s membership request was declined and notified via email.`
+      );
+      await fetchDashboardData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-    const dueDay = Number(rules.dueDay);
-    const interestRate = Number(rules.interestRate);
-    const monthlyContribution = Number(rules.monthlyContribution);
-    const maxLoan = Number(rules.maxLoan);
-    const latePenalty = Number(rules.latePenalty);
-
+  const handleOfficialSave = async (e) => {
+    e.preventDefault();
+    if (!officials.treasurer && !officials.secretary) {
+      setError("Please select at least one member to assign as an official.");
+      return;
+    }
     if (
-      !Number.isFinite(monthlyContribution) ||
-      !Number.isFinite(maxLoan) ||
-      !Number.isFinite(latePenalty) ||
-      !Number.isFinite(dueDay) ||
-      !Number.isFinite(interestRate) ||
-      monthlyContribution <= 0 ||
-      maxLoan <= 0 ||
-      latePenalty < 0 ||
-      dueDay < 1 ||
-      dueDay > 31 ||
-      !Number.isInteger(dueDay) ||
-      interestRate < 0
+      officials.treasurer &&
+      officials.secretary &&
+      officials.treasurer === officials.secretary
     ) {
-      setMessage("Please enter valid chama rule values.");
+      setError("The same member cannot hold both Treasurer and Secretary roles.");
       return;
     }
 
-    // BACKEND CONNECTION:
-    // PATCH /api/chama/rules
-    // Send the rules to Flask.
+    setSubmitting(true);
+    setError("");
+    try {
+      const updates = [];
 
-    console.log("Chama rules:", rules);
+      const prevTreasurer = activeMembers.find((m) => m.role === "treasurer");
+      if (
+        prevTreasurer &&
+        String(prevTreasurer.id) !== String(officials.treasurer)
+      ) {
+        updates.push(
+          axiosClient.patch(`/memberships/${prevTreasurer.id}`, {
+            role: "member",
+          })
+        );
+      }
 
-    setMessage("Chama rules saved successfully (demo).");
+      const prevSecretary = activeMembers.find((m) => m.role === "secretary");
+      if (
+        prevSecretary &&
+        String(prevSecretary.id) !== String(officials.secretary)
+      ) {
+        updates.push(
+          axiosClient.patch(`/memberships/${prevSecretary.id}`, {
+            role: "member",
+          })
+        );
+      }
+
+      if (officials.treasurer) {
+        updates.push(
+          axiosClient.patch(`/memberships/${officials.treasurer}`, {
+            role: "treasurer",
+          })
+        );
+      }
+      if (officials.secretary) {
+        updates.push(
+          axiosClient.patch(`/memberships/${officials.secretary}`, {
+            role: "secretary",
+          })
+        );
+      }
+
+      await Promise.all(updates);
+      showFeedback("Chama officials have been updated successfully.");
+      await fetchDashboardData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRulesSave = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError("");
+
+    try {
+      await axiosClient.patch(`/chamas/${chamaId}`, {
+        default_interest_rate: Number(rules.interestRate),
+        max_loan_amount: Number(rules.maxLoan),
+      });
+
+      const existingMonthly = contributionRules.find(
+        (r) =>
+          String(r.name || "").toLowerCase() === "monthly contribution"
+      );
+
+      if (!existingMonthly) {
+        await axiosClient.post(`/chamas/${chamaId}/contribution-types`, {
+          name: "Monthly Contribution",
+          amount: Number(rules.monthlyContribution),
+          frequency: "monthly",
+          due_day: Number(rules.dueDay),
+          grace_days: 5,
+          penalty_amount: Number(rules.latePenalty),
+        });
+      }
+
+      showFeedback("Chama rules and loan limits saved successfully.");
+      await fetchDashboardData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCreateProject = async (e) => {
+    e.preventDefault();
+    if (!projectForm.title.trim()) return;
+
+    setSubmitting(true);
+    setError("");
+    try {
+      await axiosClient.post(`/chamas/${chamaId}/projects`, {
+        title: projectForm.title.trim(),
+        description: projectForm.description.trim() || null,
+        amount_invested: projectForm.amount_invested
+          ? Number(projectForm.amount_invested)
+          : 0,
+        status: projectForm.status,
+        image_url: projectForm.image_url.trim() || null,
+        is_public: true,
+      });
+
+      setProjectForm({
+        title: "",
+        description: "",
+        amount_invested: "",
+        status: "ongoing",
+        image_url: "",
+      });
+      showFeedback("Investment project published to your public Chama page.");
+      await fetchDashboardData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
-    <div className="space-y-7">
-
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+    <div className="space-y-6">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <p className="text-sm font-semibold text-green-800">
-            SUMMIT CHAMA / ADMINISTRATION
+          <p className="text-sm font-medium text-green-800">
+            Chama Administration
           </p>
-
-          <h1 className="mt-1 text-2xl font-bold text-gray-900">
-            Admin Dashboard
+          <h1 className="mt-1 text-2xl font-bold text-green-950">
+            Welcome back, {user?.full_name || "Admin"}
           </h1>
-
           <p className="mt-1 text-sm text-gray-500">
-            Manage your chama, members, officials and financial rules.
+            Manage members, officials, rules, projects, and Chama operations.
           </p>
-        </div>
-
-        <div className="flex items-center gap-2 text-sm text-gray-500">
-          <Clock size={16} />
-          13 November 2026
         </div>
       </div>
 
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+          {error}
+        </div>
+      )}
+
       {message && (
-        <div
-          role="status"
-          className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"
-        >
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-800">
           {message}
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          title="Total Members"
-          value="120"
-          description="Registered chama members"
+          title="Active Members"
+          value={loading ? "..." : stats.totalMembers}
           icon={Users}
         />
-
         <StatCard
           title="Pending Requests"
-          value={requests.length}
-          description="Awaiting your approval"
-          icon={UserPlus}
+          value={loading ? "..." : stats.pendingCount}
+          icon={Clock}
         />
-
-        <StatCard
-          title="Outstanding Loans"
-          value="KES 85,000"
-          description="Loans yet to be repaid"
-          icon={HandCoins}
-        />
-
         <StatCard
           title="Total Contributions"
-          value="KES 450,000"
-          description="Total contributions received"
+          value={loading ? "..." : formatCurrency(stats.totalContributions)}
           icon={Wallet}
+        />
+        <StatCard
+          title="Active Loans"
+          value={loading ? "..." : stats.activeLoansCount}
+          icon={HandCoins}
         />
       </div>
 
-      <Panel
-        title="Join Requests"
-        action={
-          <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-800">
-            {requests.length} Pending
-          </span>
-        }
-      >
-        {requests.length === 0 ? (
-          <div className="py-8 text-center">
-            <CheckCircle
-              size={35}
-              className="mx-auto text-green-700"
-            />
-
-            <p className="mt-3 font-medium text-gray-800">
-              All caught up!
-            </p>
-
-            <p className="mt-1 text-sm text-gray-500">
-              There are no pending join requests.
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[750px] text-left text-sm">
-              <thead className="border-b border-gray-200 bg-gray-50 text-gray-500">
-                <tr>
-                  <th className="px-4 py-3 font-medium">
-                    Applicant
-                  </th>
-                  <th className="px-4 py-3 font-medium">
-                    Phone
-                  </th>
-                  <th className="px-4 py-3 font-medium">
-                    Reason
-                  </th>
-                  <th className="px-4 py-3 font-medium">
-                    Date
-                  </th>
-                  <th className="px-4 py-3 font-medium">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {requests.map((request) => (
-                  <tr
-                    key={request.id}
-                    className="border-b border-gray-100 hover:bg-gray-50"
-                  >
-                    <td className="px-4 py-4">
-                      <p className="font-semibold text-gray-900">
-                        {request.name}
-                      </p>
-
-                      <p className="text-xs text-gray-500">
-                        {request.position}
-                      </p>
-                    </td>
-
-                    <td className="px-4 py-4 text-gray-600">
-                      {request.phone}
-                    </td>
-
-                    <td className="max-w-xs px-4 py-4 text-gray-600">
-                      {request.reason}
-                    </td>
-
-                    <td className="px-4 py-4 text-gray-500">
-                      {request.date}
-                    </td>
-
-                    <td className="px-4 py-4">
-                      <div className="flex flex-wrap gap-2">
-
-                        <ActionButton
-                          onClick={() => {
-                            setSelectedRequest(request);
-                            setMessage("");
-                          }}
-                        >
-                          <Eye size={15} />
-                          View
-                        </ActionButton>
-
-                        <ActionButton
-                          onClick={() =>
-                            handleRequest(request.id, "approved")
-                          }
-                        >
-                          <CheckCircle size={15} />
-                          Approve
-                        </ActionButton>
-
-                        <ActionButton
-                          variant="danger"
-                          onClick={() =>
-                            handleRequest(request.id, "rejected")
-                          }
-                        >
-                          <XCircle size={15} />
-                          Reject
-                        </ActionButton>
-
-                      </div>
-                    </td>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Panel
+          title="Pending Join Requests"
+          className="lg:col-span-2"
+          action={
+            <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-800">
+              {pendingRequests.length} pending
+            </span>
+          }
+        >
+          {loading ? (
+            <div className="py-8 text-center text-sm text-gray-500">
+              Loading requests...
+            </div>
+          ) : pendingRequests.length === 0 ? (
+            <div className="py-8 text-center text-sm text-gray-500">
+              No pending membership requests right now
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[700px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-xs uppercase text-gray-500">
+                    <th className="px-3 py-3">Applicant</th>
+                    <th className="px-3 py-3">Member No.</th>
+                    <th className="px-3 py-3">Phone</th>
+                    <th className="px-3 py-3">Applied</th>
+                    <th className="px-3 py-3">Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Panel>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {pendingRequests.map((req) => (
+                    <tr key={req.id}>
+                      <td className="px-3 py-3">
+                        <p className="font-medium text-gray-900">{req.full_name}</p>
+                        <p className="text-xs text-gray-500">{req.email}</p>
+                      </td>
+                      <td className="px-3 py-3">{req.member_number || "-"}</td>
+                      <td className="px-3 py-3">{req.phone_number || "-"}</td>
+                      <td className="px-3 py-3">
+                        {req.joined_at
+                          ? new Date(req.joined_at).toLocaleDateString("en-KE")
+                          : "Today"}
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className="flex gap-2">
+                          <ActionButton
+                            type="button"
+                            loading={submitting}
+                            onClick={() =>
+                              handleRequest(req.id, "active", req.full_name)
+                            }
+                          >
+                            Approve
+                          </ActionButton>
+                          <ActionButton
+                            type="button"
+                            variant="danger"
+                            loading={submitting}
+                            onClick={() =>
+                              handleRequest(req.id, "rejected", req.full_name)
+                            }
+                          >
+                            Reject
+                          </ActionButton>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-
-        {/* ASSIGN OFFICIALS */}
-        <Panel title="Assign Officials">
-          <p className="mb-5 text-sm text-gray-500">
-            Select members to serve in the chama leadership positions.
-          </p>
-
-          <form
-            onSubmit={saveOfficials}
-            className="space-y-4"
-          >
-            {[
-              { label: "Treasurer", name: "treasurer" },
-              { label: "Secretary", name: "secretary" },
-            ].map((role) => (
-              <div key={role.name}>
-                <label className="mb-2 block text-sm font-medium text-gray-700">
-                  {role.label}
-                </label>
-
-                <select
-                  name={role.name}
-                  value={officials[role.name]}
-                  onChange={handleOfficialChange}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-sm outline-none focus:border-green-800 focus:ring-2 focus:ring-green-100"
-                  required
-                >
-                  <option value="">Select member</option>
-
-                  {members.map((member) => (
-                    <option
-                      key={member.id}
-                      value={member.id}
-                      disabled={Object.entries(officials).some(
-                        ([key, id]) =>
-                          key !== role.name &&
-                          String(id) === String(member.id)
-                      )}
-                    >
-                      {member.name}
+        <Panel title="Assign Officials" action={<Settings size={20} />}>
+          <form onSubmit={handleOfficialSave} className="space-y-4">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                Treasurer
+              </label>
+              <select
+                value={officials.treasurer}
+                onChange={(e) =>
+                  setOfficials({ ...officials, treasurer: e.target.value })
+                }
+                className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-green-800"
+              >
+                <option value="">Select Treasurer</option>
+                {activeMembers
+                  .filter((m) => m.role !== "chama_admin")
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.full_name} ({m.member_number})
                     </option>
                   ))}
-                </select>
-              </div>
-            ))}
+              </select>
+            </div>
 
-            <ActionButton type="submit">
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                Secretary
+              </label>
+              <select
+                value={officials.secretary}
+                onChange={(e) =>
+                  setOfficials({ ...officials, secretary: e.target.value })
+                }
+                className="w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-green-800"
+              >
+                <option value="">Select Secretary</option>
+                {activeMembers
+                  .filter((m) => m.role !== "chama_admin")
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.full_name} ({m.member_number})
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            <ActionButton type="submit" loading={submitting}>
               Save Officials
             </ActionButton>
           </form>
         </Panel>
 
-        <Panel title="Chama Rules">
-          <p className="mb-5 text-sm text-gray-500">
-            Set the financial rules that apply to all members.
-          </p>
-
-          <form
-            onSubmit={saveRules}
-            className="space-y-4"
-          >
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {[
-                {
-                  label: "Monthly Contribution (KES)",
-                  name: "monthlyContribution",
-                  placeholder: "e.g. 2000",
-                  min: "1",
-                },
-                {
-                  label: "Contribution Due Day",
-                  name: "dueDay",
-                  placeholder: "1 - 31",
-                  min: "1",
-                  max: "31",
-                },
-                {
-                  label: "Late Penalty (KES)",
-                  name: "latePenalty",
-                  placeholder: "e.g. 100",
-                  min: "0",
-                },
-                {
-                  label: "Loan Interest Rate (%)",
-                  name: "interestRate",
-                  placeholder: "e.g. 5",
-                  min: "0",
-                  step: "0.01",
-                },
-                {
-                  label: "Maximum Loan (KES)",
-                  name: "maxLoan",
-                  placeholder: "e.g. 50000",
-                  min: "1",
-                },
-              ].map((field) => (
-                <div key={field.name}>
-                  <label className="mb-2 block text-sm font-medium text-gray-700">
-                    {field.label}
-                  </label>
-
-                  <input
-                    name={field.name}
-                    type="number"
-                    min={field.min}
-                    max={field.max}
-                    step={field.step || "1"}
-                    value={rules[field.name]}
-                    onChange={handleRuleChange}
-                    placeholder={field.placeholder}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-3 text-sm outline-none focus:border-green-800 focus:ring-2 focus:ring-green-100"
-                    required
-                  />
-                </div>
-              ))}
+        <Panel title="Chama Rules" action={<Settings size={20} />}>
+          <form onSubmit={handleRulesSave} className="grid gap-4 sm:grid-cols-2">
+            <label className="text-sm font-medium text-gray-700">
+              Monthly Contribution (KES)
+              <input
+                type="number"
+                value={rules.monthlyContribution}
+                onChange={(e) =>
+                  setRules({ ...rules, monthlyContribution: e.target.value })
+                }
+                className="mt-1.5 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-green-800"
+                required
+              />
+            </label>
+            <label className="text-sm font-medium text-gray-700">
+              Due Day (1-31)
+              <input
+                type="number"
+                min="1"
+                max="31"
+                value={rules.dueDay}
+                onChange={(e) =>
+                  setRules({ ...rules, dueDay: e.target.value })
+                }
+                className="mt-1.5 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-green-800"
+                required
+              />
+            </label>
+            <label className="text-sm font-medium text-gray-700">
+              Late Penalty (KES)
+              <input
+                type="number"
+                min="0"
+                value={rules.latePenalty}
+                onChange={(e) =>
+                  setRules({ ...rules, latePenalty: e.target.value })
+                }
+                className="mt-1.5 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-green-800"
+                required
+              />
+            </label>
+            <label className="text-sm font-medium text-gray-700">
+              Loan Interest (%)
+              <input
+                type="number"
+                step="0.5"
+                min="0"
+                max="100"
+                value={rules.interestRate}
+                onChange={(e) =>
+                  setRules({ ...rules, interestRate: e.target.value })
+                }
+                className="mt-1.5 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-green-800"
+                required
+              />
+            </label>
+            <label className="text-sm font-medium text-gray-700">
+              Max Loan (KES)
+              <input
+                type="number"
+                min="500"
+                value={rules.maxLoan}
+                onChange={(e) =>
+                  setRules({ ...rules, maxLoan: e.target.value })
+                }
+                className="mt-1.5 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-green-800"
+                required
+              />
+            </label>
+            <div className="flex items-end">
+              <ActionButton type="submit" loading={submitting}>
+                Save Rules
+              </ActionButton>
             </div>
+          </form>
+        </Panel>
 
-            <ActionButton type="submit">
-              <Settings size={16} />
-              Save Chama Rules
+        <Panel title="Publish Investment Project" action={<FolderPlus size={20} />}>
+          <form onSubmit={handleCreateProject} className="space-y-4">
+            <label className="block text-sm font-medium text-gray-700">
+              Project Title
+              <input
+                type="text"
+                value={projectForm.title}
+                onChange={(e) =>
+                  setProjectForm({ ...projectForm, title: e.target.value })
+                }
+                placeholder="e.g. Ruiru Land Purchase"
+                className="mt-1.5 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-green-800"
+                required
+              />
+            </label>
+            <label className="block text-sm font-medium text-gray-700">
+              Invested (KES)
+              <input
+                type="number"
+                min="0"
+                value={projectForm.amount_invested}
+                onChange={(e) =>
+                  setProjectForm({
+                    ...projectForm,
+                    amount_invested: e.target.value,
+                  })
+                }
+                placeholder="500000"
+                className="mt-1.5 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-green-800"
+              />
+            </label>
+            <label className="block text-sm font-medium text-gray-700">
+              Status
+              <select
+                value={projectForm.status}
+                onChange={(e) =>
+                  setProjectForm({ ...projectForm, status: e.target.value })
+                }
+                className="mt-1.5 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-green-800"
+              >
+                <option value="planned">Planned</option>
+                <option value="ongoing">Ongoing</option>
+                <option value="completed">Completed</option>
+              </select>
+            </label>
+            <label className="block text-sm font-medium text-gray-700">
+              Description
+              <textarea
+                rows="3"
+                value={projectForm.description}
+                onChange={(e) =>
+                  setProjectForm({
+                    ...projectForm,
+                    description: e.target.value,
+                  })
+                }
+                placeholder="Brief details about this investment..."
+                className="mt-1.5 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-green-800"
+              />
+            </label>
+            <ActionButton type="submit" loading={submitting}>
+              Publish Project
             </ActionButton>
           </form>
         </Panel>
-      </div>
 
-      <Panel
-        title="Recent Audit Activity"
-        action={
-          <ClipboardList
-            size={20}
-            className="text-green-800"
-          />
-        }
-      >
-        {auditRecords.length === 0 ? (
-          <p className="py-8 text-center text-sm text-gray-500">
-            No administrative activity has been recorded yet.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[600px] text-left text-sm">
-              <thead className="border-b border-gray-200 bg-gray-50 text-gray-500">
-                <tr>
-                  <th className="px-4 py-3 font-medium">
-                    Official
-                  </th>
-                  <th className="px-4 py-3 font-medium">
-                    Activity
-                  </th>
-                  <th className="px-4 py-3 font-medium">
-                    Date & Time
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {auditRecords.map((record) => (
-                  <tr
-                    key={record.id}
-                    className="border-b border-gray-100 hover:bg-gray-50"
-                  >
-                    <td className="px-4 py-4 font-semibold text-gray-800">
-                      {record.official}
-                    </td>
-
-                    <td className="px-4 py-4 text-gray-600">
-                      {record.action}
-                    </td>
-
-                    <td className="px-4 py-4 text-gray-500">
-                      {record.date}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Panel>
-
-      {selectedRequest && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="join-request-title"
-            className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl"
-          >
-            <div className="mb-5 flex items-center justify-between">
-              <h2
-                id="join-request-title"
-                className="text-xl font-bold text-gray-900"
-              >
-                Join Request Details
-              </h2>
-
-              <button
-                type="button"
-                onClick={() => setSelectedRequest(null)}
-                aria-label="Close join request details"
-                className="text-gray-500 hover:text-gray-800"
-              >
-                <XCircle size={24} />
-              </button>
+        <Panel
+          title="Recent Audit Activity"
+          className="lg:col-span-2"
+          action={<History size={20} />}
+        >
+          {auditLogs.length === 0 ? (
+            <div className="py-8 text-center text-sm text-gray-500">
+              No audit activity recorded yet
             </div>
-
-            <form className="space-y-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Full Name
-                </label>
-
-                <input
-                  value={selectedRequest.name}
-                  readOnly
-                  className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Email Address
-                </label>
-
-                <input
-                  value={selectedRequest.email}
-                  readOnly
-                  className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Phone Number
-                </label>
-
-                <input
-                  value={selectedRequest.phone}
-                  readOnly
-                  className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Reason for Joining
-                </label>
-
-                <textarea
-                  value={selectedRequest.reason}
-                  readOnly
-                  rows={4}
-                  className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2"
-                />
-              </div>
-
-              <div className="flex flex-wrap justify-end gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setSelectedRequest(null)}
-                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          ) : (
+            <div className="space-y-3">
+              {auditLogs.map((log) => (
+                <div
+                  key={log.id}
+                  className="rounded-lg border border-gray-100 p-3"
                 >
-                  Close
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleRequest(selectedRequest.id, "rejected")
-                  }
-                  className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800"
-                >
-                  Reject
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleRequest(selectedRequest.id, "approved")
-                  }
-                  className="rounded-lg bg-green-900 px-4 py-2 text-sm font-medium text-white hover:bg-green-800"
-                >
-                  Approve
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
+                  <p className="text-sm font-medium text-gray-900">
+                    {log.action} {log.table_name?.replace(/_/g, " ")} #
+                    {log.record_id}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    By {log.actor_name || "Admin"}{" "}
+                    {log.created_at
+                      ? `on ${new Date(log.created_at).toLocaleDateString("en-KE")}`
+                      : ""}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </Panel>
+      </div>
     </div>
   );
 }

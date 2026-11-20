@@ -1,4 +1,3 @@
-
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -20,16 +19,19 @@ import {
 
 import { useAuth } from "../context/AuthContext";
 
+const superAdminNav = [
+  { name: "Overview", path: "/dashboard", icon: LayoutDashboard },
+  { name: "Administrators", path: "/dashboard/administrators", icon: ShieldCheck },
+  { name: "Organizations", path: "/dashboard/organizations", icon: Building2 },
+  { name: "Users", path: "/dashboard/users", icon: Users },
+  { name: "Reports", path: "/dashboard/reports", icon: FileText },
+  { name: "Audit Logs", path: "/dashboard/audit-logs", icon: History },
+  { name: "Settings", path: "/dashboard/settings", icon: Settings },
+];
+
 const navigationByRole = {
-  superadmin: [
-    { name: "Overview", path: "/dashboard", icon: LayoutDashboard },
-    { name: "Administrators", path: "/dashboard/administrators", icon: ShieldCheck },
-    { name: "Organizations", path: "/dashboard/organizations", icon: Building2 },
-    { name: "Users", path: "/dashboard/users", icon: Users },
-    { name: "Reports", path: "/dashboard/reports", icon: FileText },
-    { name: "Audit Logs", path: "/dashboard/audit-logs", icon: History },
-    { name: "Settings", path: "/dashboard/settings", icon: Settings },
-  ],
+  super_admin: superAdminNav,
+  superadmin: superAdminNav,
 
   chama_admin: [
     { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
@@ -81,25 +83,18 @@ export default function Sidebar() {
     .trim()
     .replace(/[\s-]+/g, "_");
 
-  const navigation =
-    navigationByRole[role] || [];
+  const navigation = navigationByRole[role] || [];
 
   return (
     <aside className="flex min-h-screen w-64 shrink-0 flex-col bg-green-950 text-white">
-
       <div className="border-b border-green-900 px-6 py-6">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-800">
             <Building2 size={23} />
           </div>
-
           <div>
-            <h1 className="text-xl font-bold tracking-wide">
-              SUMMIT
-            </h1>
-            <p className="text-xs text-green-300">
-              Chama Management
-            </p>
+            <h1 className="text-xl font-bold tracking-wide">SUMMIT</h1>
+            <p className="text-xs text-green-300">Chama Management</p>
           </div>
         </div>
       </div>
@@ -108,7 +103,6 @@ export default function Sidebar() {
         <p className="text-xs uppercase tracking-wider text-green-400">
           Logged in as
         </p>
-
         <p className="mt-1 font-semibold capitalize">
           {role.replace(/_/g, " ") || "User"}
         </p>
@@ -117,7 +111,6 @@ export default function Sidebar() {
       <nav className="flex-1 space-y-2 px-4 py-6">
         {navigation.map((item) => {
           const Icon = item.icon;
-
           return (
             <NavLink
               key={item.name}
@@ -143,9 +136,9 @@ export default function Sidebar() {
           Summit Chama Management System
         </p>
       </div>
-
     </aside>
   );
 }
+
 
 

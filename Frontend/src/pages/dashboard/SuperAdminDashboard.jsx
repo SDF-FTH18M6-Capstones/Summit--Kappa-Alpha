@@ -1,794 +1,335 @@
-
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
+  Building2,
   Users,
-  UserPlus,
-  Wallet,
-  HandCoins,
-  CheckCircle,
-  XCircle,
-  Clock,
-  Settings,
-  ClipboardList,
-  Eye,
+  ShieldCheck,
+  History,
+  UserCheck,
+  UserX,
 } from "lucide-react";
-
+import { useAuth } from "../../context/AuthContext";
+import axiosClient, { getErrorMessage } from "../../api/axiosClient";
 import {
-  StatCard,
-  Panel,
   ActionButton,
+  Panel,
+  StatCard,
 } from "./DashboardShared";
-// BACKEND DATA REQUIRED
-// Replace these demo records with data from Flask.
 
-// BACKEND NEEDED:
-// GET /api/join-requests
-// Expected response:
-// [
-//   {
-//     id, full_name, email, phone_number,
-//     message, status, created_at, chama_id
-//   }
-// ]
-//
-// Map Flask fields to the frontend names if necessary.
-const initialRequests = [
-  {
-    id: 1,
-    name: "Ann Stacia",
-    email: "ann@example.com",
-    position: "Member",
-    phone: "0712345678",
-    reason: "I would like to join and contribute monthly.",
-    date: "12 Nov 2026",
-  },
-  {
-    id: 2,
-    name: "Rihanna Tanya",
-    email: "rihanna@example.com",
-    position: "Member",
-    phone: "0723456789",
-    reason: "I am interested in saving with this chama.",
-    date: "13 Nov 2026",
-  },
-];
+export default function SuperAdminDashboard() {
+  const { user } = useAuth();
 
-// BACKEND NEEDED:
-// GET /api/memberships?status=active
-// Expected response:
-const members = [
-  { id: 1, name: "Ann Stacia" },
-  { id: 2, name: "Rihanna Tanya" },
-];
-
-// BACKEND NEEDED:
-// GET /api/audit-logs?limit=5
-const auditRecords = [
-  {
-    id: 1,
-    official: "Admin",
-    action: "Edited contribution record",
-    date: "13 Nov 2026, 10:30 AM",
-  },
-  {
-    id: 2,
-    official: "Treasurer",
-    action: "Approved loan",
-    date: "12 Nov 2026, 02:15 PM",
-  },
-];
-
-export default function AdminDashboard() {
-  const [requests, setRequests] = useState(initialRequests);
-
-  const [selectedRequest, setSelectedRequest] = useState(null);
-
-  const [officials, setOfficials] = useState({
-    treasurer: "",
-    secretary: "",
-  });
-
-  const [rules, setRules] = useState({
-    monthlyContribution: "",
-    dueDay: "",
-    latePenalty: "",
-    interestRate: "",
-    maxLoan: "",
-  });
-
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
 
-  const handleRequest = (id, decision) => {
-    const confirmed = window.confirm(
-      `Are you sure you want to ${decision} this join request?`
-    );
+  const [chamas, setChamas] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
 
-    if (!confirmed) return;
+  const [totals, setTotals] = useState({
+    chamas: 0,
+    users: 0,
+    auditLogs: 0,
+  });
 
-    // BACKEND NEEDED:
-    // PATCH /api/join-requests/${id}
-    //
-    // Send:
-    // { "status": "approved" }
-    // or
-    // { "status": "rejected" }
-    //
-    // Flask should:
-    // 1. Verify the logged-in user is a chama_admin.
-    // 2. Check that the request belongs to this admin's chama.
-    // 3. Update the join request status.
-    // 4. If approved, create an active Membership record.
-    // 5. Return the updated request.
-    //
-    // IMPORTANT:
-    // Replace the demo state update with an Axios PATCH request.
-    // Only update the UI after Flask confirms success.
-
-    setRequests((current) =>
-      current.filter((request) => request.id !== id)
-    );
-
-    setSelectedRequest(null);
-
-    setMessage(
-      `Join request ${decision} successfully (demo).`
-    );
+  const showFeedback = (text) => {
+    setError("");
+    setMessage(text);
+    setTimeout(() => setMessage(""), 4500);
   };
 
-  // =====================================================
-  // ASSIGN OFFICIALS
-  // =====================================================
+  const fetchPlatformData = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [chamasRes, usersRes, auditRes] = await Promise.all([
+        axiosClient.get("/chamas", { params: { per_page: 50 } }),
+        axiosClient.get("/admin/users", { params: { per_page: 50 } }),
+        axiosClient.get("/admin/audit-logs", { params: { per_page: 15 } }),
+      ]);
 
-  const handleOfficialChange = (event) => {
-    const { name, value } = event.target;
+      const chamaItems = chamasRes.data?.items || [];
+      const userItems = usersRes.data?.items || [];
+      const logItems = auditRes.data?.items || [];
 
-    setOfficials((current) => ({
-      ...current,
-      [name]: value,
-    }));
-  };
+      setChamas(chamaItems);
+      setUsers(userItems);
+      setAuditLogs(logItems);
 
-  const saveOfficials = (event) => {
-    event.preventDefault();
-    setMessage("");
-
-    const selected = Object.values(officials);
-
-    if (selected.some((id) => !id)) {
-      setMessage("Please select both officials.");
-      return;
+      setTotals({
+        chamas: chamasRes.data?.total ?? chamaItems.length,
+        users: usersRes.data?.total ?? userItems.length,
+        auditLogs: auditRes.data?.total ?? logItems.length,
+      });
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setLoading(false);
     }
+  }, []);
 
-    if (new Set(selected).size !== selected.length) {
-      setMessage(
-        "The treasurer and secretary must be different members."
+  useEffect(() => {
+    const timeoutId = window.setTimeout(fetchPlatformData, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [fetchPlatformData]);
+
+  const handleToggleUserStatus = async (targetUser) => {
+    const nextActive = !targetUser.is_active;
+    setSubmitting(true);
+    setError("");
+    try {
+      await axiosClient.patch(`/admin/users/${targetUser.id}/status`, {
+        is_active: nextActive,
+      });
+      showFeedback(
+        `${targetUser.full_name}'s account has been ${
+          nextActive ? "activated" : "suspended"
+        }.`
       );
-      return;
+      await fetchPlatformData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSubmitting(false);
     }
-
-    // BACKEND NEEDED:
-    // POST /api/officials
-    //
-    // Send:
-    // {
-    //   "treasurer_id": 1,
-    //   "secretary_id": 2
-    // }
-    //
-    // Flask should:
-    // 1. Verify the logged-in user is a chama_admin.
-    // 2. Verify both users are active members of this chama.
-    // 3. Prevent assigning the same member to both positions.
-    // 4. Save the official assignments.
-    //
-    // NOTE:
-    // Your current Membership model does not necessarily have
-    // official-position fields. You may need an Officials table
-    // or another suitable way of storing these assignments.
-
-    console.log("Officials:", officials);
-
-    setMessage("Officials saved successfully (demo).");
-  }
-
-  const handleRuleChange = (event) => {
-    const { name, value } = event.target;
-
-    setRules((current) => ({
-      ...current,
-      [name]: value,
-    }));
   };
 
-  const saveRules = (event) => {
-    event.preventDefault();
-    setMessage("");
-
-    const dueDay = Number(rules.dueDay);
-    const interestRate = Number(rules.interestRate);
-    const monthlyContribution = Number(rules.monthlyContribution);
-    const maxLoan = Number(rules.maxLoan);
-    const latePenalty = Number(rules.latePenalty);
-
-    if (
-      !Number.isFinite(monthlyContribution) ||
-      !Number.isFinite(maxLoan) ||
-      !Number.isFinite(latePenalty) ||
-      !Number.isFinite(dueDay) ||
-      !Number.isFinite(interestRate) ||
-      monthlyContribution <= 0 ||
-      maxLoan <= 0 ||
-      latePenalty < 0 ||
-      dueDay < 1 ||
-      dueDay > 31 ||
-      !Number.isInteger(dueDay) ||
-      interestRate < 0
-    ) {
-      setMessage("Please enter valid chama rule values.");
-      return;
-    }
-
-    // BACKEND NEEDED:
-    // PATCH /api/chama/rules
-    //
-    // Send:
-    // {
-    //   "monthly_contribution": 2000,
-    //   "due_day": 5,
-    //   "late_penalty": 100,
-    //   "interest_rate": 5,
-    //   "max_loan": 50000
-    // }
-    //
-    // Flask should:
-    // 1. Verify the logged-in user is a chama_admin.
-    // 2. Verify the admin manages this chama.
-    // 3. Validate the financial values again on the backend.
-    // 4. Save the rules.
-    //
-    // IMPORTANT:
-    // Your current ContributionTypes model contains fields such as
-    // amount, due_day, grace_days and penalty_amount.
-    // Loan interest and maximum loan may need a separate
-    // ChamaSettings model or equivalent configuration.
-
-    console.log("Chama rules:", rules);
-
-    setMessage("Chama rules saved successfully (demo).");
-  };
+  const chamaAdminsCount = users.filter((u) => u.role === "chama_admin").length;
 
   return (
-    <div className="space-y-7">
-
-      {/* DASHBOARD HEADING
-          No separate endpoint required. */}
-
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-        <div>
-          <p className="text-sm font-semibold text-green-800">
-            SUMMIT CHAMA / ADMINISTRATION
-          </p>
-
-          <h1 className="mt-1 text-2xl font-bold text-gray-900">
-            Admin Dashboard
-          </h1>
-
-          <p className="mt-1 text-sm text-gray-500">
-            Manage your chama, members, officials and financial rules.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 text-sm text-gray-500">
-          <Clock size={16} />
-          13 November 2026
-        </div>
+    <div className="space-y-6">
+      <div>
+        <p className="text-sm font-medium text-green-800">Platform Administration</p>
+        <h1 className="mt-1 text-2xl font-bold text-green-950">
+          Welcome back, {user?.full_name || "Super Admin"}
+        </h1>
+        <p className="mt-1 text-sm text-gray-500">
+          Global platform oversight across all registered Chamas, administrators, users, and audit logs.
+        </p>
       </div>
 
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+          {error}
+        </div>
+      )}
+
       {message && (
-        <div
-          role="status"
-          className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"
-        >
+        <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-800">
           {message}
         </div>
       )}
 
-      {/*
-          BACKEND ENDPOINTS NEEDED:
-
-          GET /api/memberships?status=active
-          Used to calculate Total Members.
-
-          GET /api/join-requests?status=pending
-          Used to calculate Pending Requests.
-
-          GET /api/loans?status=disbursed
-          Used to calculate Outstanding Loans.
-          Sum the unpaid loan balances.
-
-          GET /api/contributions
-          Used to calculate Total Contributions.
-          Sum the contributions for this chama.
-
-          All endpoints must return data belonging only to
-          the chama managed by the logged-in admin.
-      */}
-
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          title="Total Members"
-          value="120"
-          description="Registered chama members"
+          title="Registered Chamas"
+          value={loading ? "..." : totals.chamas}
+          icon={Building2}
+        />
+
+        <StatCard
+          title="Chama Administrators"
+          value={loading ? "..." : chamaAdminsCount}
+          icon={ShieldCheck}
+        />
+
+        <StatCard
+          title="Total Platform Users"
+          value={loading ? "..." : totals.users}
           icon={Users}
         />
 
         <StatCard
-          title="Pending Requests"
-          value={requests.length}
-          description="Awaiting your approval"
-          icon={UserPlus}
-        />
-
-        <StatCard
-          title="Outstanding Loans"
-          value="KES 85,000"
-          description="Loans yet to be repaid"
-          icon={HandCoins}
-        />
-
-        <StatCard
-          title="Total Contributions"
-          value="KES 450,000"
-          description="Total contributions received"
-          icon={Wallet}
+          title="Global Audit Events"
+          value={loading ? "..." : totals.auditLogs}
+          icon={History}
         />
       </div>
 
-      {/* 
-          GET /api/join-requests?status=pending
-          Retrieves pending applications.
-
-          PATCH /api/join-requests/<id>
-          Approves or rejects an application.
-
-          The backend should create a Membership when an
-          application is approved.
-      */}
-
-      <Panel
-        title="Join Requests"
-        action={
-          <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-800">
-            {requests.length} Pending
-          </span>
-        }
-      >
-        {requests.length === 0 ? (
-          <div className="py-8 text-center">
-            <CheckCircle
-              size={35}
-              className="mx-auto text-green-700"
-            />
-
-            <p className="mt-3 font-medium text-gray-800">
-              All caught up!
-            </p>
-
-            <p className="mt-1 text-sm text-gray-500">
-              There are no pending join requests.
-            </p>
-          </div>
-        ) : (
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <Panel
+          title="Platform Users & Administrators"
+          className="lg:col-span-2"
+        >
+          <p className="mb-4 text-sm text-gray-500">
+            Suspend or activate user accounts across the platform.
+          </p>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[750px] text-left text-sm">
-              <thead className="border-b border-gray-200 bg-gray-50 text-gray-500">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b bg-gray-50 text-xs uppercase text-gray-500">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Applicant</th>
-                  <th className="px-4 py-3 font-medium">Phone</th>
-                  <th className="px-4 py-3 font-medium">Reason</th>
-                  <th className="px-4 py-3 font-medium">Date</th>
-                  <th className="px-4 py-3 font-medium">Actions</th>
+                  <th className="px-4 py-3">User</th>
+                  <th className="px-4 py-3">Role</th>
+                  <th className="px-4 py-3">Verified</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Action</th>
                 </tr>
               </thead>
 
-              <tbody>
-                {requests.map((request) => (
-                  <tr
-                    key={request.id}
-                    className="border-b border-gray-100 hover:bg-gray-50"
-                  >
-                    <td className="px-4 py-4">
-                      <p className="font-semibold text-gray-900">
-                        {request.name}
-                      </p>
-
-                      <p className="text-xs text-gray-500">
-                        {request.position}
-                      </p>
+              <tbody className="divide-y">
+                {users.map((u) => (
+                  <tr key={u.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3.5">
+                      <p className="font-semibold text-gray-800">{u.full_name}</p>
+                      <p className="text-xs text-gray-500">{u.email}</p>
                     </td>
 
-                    <td className="px-4 py-4 text-gray-600">
-                      {request.phone}
+                    <td className="px-4 py-3.5 capitalize text-gray-700">
+                      {(u.role || "member").replace(/_/g, " ")}
                     </td>
 
-                    <td className="max-w-xs px-4 py-4 text-gray-600">
-                      {request.reason}
+                    <td className="px-4 py-3.5">
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                          u.is_email_verified
+                            ? "bg-green-100 text-green-800"
+                            : "bg-yellow-100 text-yellow-800"
+                        }`}
+                      >
+                        {u.is_email_verified ? "Verified" : "Unverified"}
+                      </span>
                     </td>
 
-                    <td className="px-4 py-4 text-gray-500">
-                      {request.date}
+                    <td className="px-4 py-3.5">
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                          u.is_active
+                            ? "bg-green-100 text-green-800"
+                            : "bg-red-100 text-red-700"
+                        }`}
+                      >
+                        {u.is_active ? "Active" : "Suspended"}
+                      </span>
                     </td>
 
-                    <td className="px-4 py-4">
-                      <div className="flex flex-wrap gap-2">
+                    <td className="px-4 py-3.5">
+                      {u.role !== "super_admin" && (
                         <ActionButton
-                          onClick={() => {
-                            setSelectedRequest(request);
-                            setMessage("");
-                          }}
+                          type="button"
+                          loading={submitting}
+                          onClick={() => handleToggleUserStatus(u)}
+                          variant={u.is_active ? "danger" : "primary"}
+                          className="px-3 py-1.5 text-xs"
                         >
-                          <Eye size={15} />
-                          View
+                          {u.is_active ? (
+                            <>
+                              <UserX size={14} /> Suspend
+                            </>
+                          ) : (
+                            <>
+                              <UserCheck size={14} /> Activate
+                            </>
+                          )}
                         </ActionButton>
-
-                        <ActionButton
-                          onClick={() =>
-                            handleRequest(request.id, "approved")
-                          }
-                        >
-                          <CheckCircle size={15} />
-                          Approve
-                        </ActionButton>
-
-                        <ActionButton
-                          variant="danger"
-                          onClick={() =>
-                            handleRequest(request.id, "rejected")
-                          }
-                        >
-                          <XCircle size={15} />
-                          Reject
-                        </ActionButton>
-                      </div>
+                      )}
                     </td>
                   </tr>
                 ))}
+
+                {!loading && users.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan="5"
+                      className="px-4 py-8 text-center text-gray-400"
+                    >
+                      No users found
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
-        )}
-      </Panel>
+        </Panel>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-
-        {/*
-            ASSIGN OFFICIALS
-
-            GET /api/memberships?status=active
-            Loads active members into the dropdown.
-
-            POST /api/officials
-            Saves the Treasurer and Secretary assignments.
-
-            Backend must verify that selected members belong
-            to the admin's chama.*/}
-
-        <Panel title="Assign Officials">
-          <p className="mb-5 text-sm text-gray-500">
-            Select members to serve in the chama leadership positions.
+        <Panel
+          title="Registered Chamas"
+        >
+          <p className="mb-4 text-sm text-gray-500">
+            Organizations operating on Summit.
           </p>
-
-          <form
-            onSubmit={saveOfficials}
-            className="space-y-4"
-          >
-            {[
-              { label: "Treasurer", name: "treasurer" },
-              { label: "Secretary", name: "secretary" },
-            ].map((role) => (
-              <div key={role.name}>
-                <label className="mb-2 block text-sm font-medium text-gray-700">
-                  {role.label}
-                </label>
-
-                <select
-                  name={role.name}
-                  value={officials[role.name]}
-                  onChange={handleOfficialChange}
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-sm outline-none focus:border-green-800 focus:ring-2 focus:ring-green-100"
-                  required
-                >
-                  <option value="">Select member</option>
-
-                  {members.map((member) => (
-                    <option
-                      key={member.id}
-                      value={member.id}
-                      disabled={Object.entries(officials).some(
-                        ([key, id]) =>
-                          key !== role.name &&
-                          String(id) === String(member.id)
-                      )}
-                    >
-                      {member.name}
-                    </option>
-                  ))}
-                </select>
+          <div className="space-y-3">
+            {chamas.map((c) => (
+              <div
+                key={c.id}
+                className="rounded-xl border border-gray-200 bg-gray-50 p-3.5"
+              >
+                <p className="font-semibold text-gray-800">{c.name}</p>
+                <p className="mt-0.5 text-xs text-gray-500">
+                  {c.location || "Kenya"} • Reg:{" "}
+                  {c.registration_number || "N/A"}
+                </p>
               </div>
             ))}
 
-            <ActionButton type="submit">
-              Save Officials
-            </ActionButton>
-          </form>
-        </Panel>
-
-        {/* 
-            CHAMA RULES
-
-            GET /api/chama/rules
-            Loads the existing financial settings.
-
-            PATCH /api/chama/rules
-            Saves updated settings.
-
-            Check the Flask models before implementing this:
-            ContributionTypes already stores contribution amount,
-            due day, grace days and penalty amount.
-            Interest rate and maximum loan may need additional
-            chama settings fields or a separate model. */}
-
-        <Panel title="Chama Rules">
-          <p className="mb-5 text-sm text-gray-500">
-            Set the financial rules that apply to all members.
-          </p>
-
-          <form
-            onSubmit={saveRules}
-            className="space-y-4"
-          >
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {[
-                {
-                  label: "Monthly Contribution (KES)",
-                  name: "monthlyContribution",
-                  placeholder: "e.g. 2000",
-                  min: "1",
-                },
-                {
-                  label: "Contribution Due Day",
-                  name: "dueDay",
-                  placeholder: "1 - 31",
-                  min: "1",
-                  max: "31",
-                },
-                {
-                  label: "Late Penalty (KES)",
-                  name: "latePenalty",
-                  placeholder: "e.g. 100",
-                  min: "0",
-                },
-                {
-                  label: "Loan Interest Rate (%)",
-                  name: "interestRate",
-                  placeholder: "e.g. 5",
-                  min: "0",
-                  step: "0.01",
-                },
-                {
-                  label: "Maximum Loan (KES)",
-                  name: "maxLoan",
-                  placeholder: "e.g. 50000",
-                  min: "1",
-                },
-              ].map((field) => (
-                <div key={field.name}>
-                  <label className="mb-2 block text-sm font-medium text-gray-700">
-                    {field.label}
-                  </label>
-
-                  <input
-                    name={field.name}
-                    type="number"
-                    min={field.min}
-                    max={field.max}
-                    step={field.step || "1"}
-                    value={rules[field.name]}
-                    onChange={handleRuleChange}
-                    placeholder={field.placeholder}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-3 text-sm outline-none focus:border-green-800 focus:ring-2 focus:ring-green-100"
-                    required
-                  />
-                </div>
-              ))}
-            </div>
-
-            <ActionButton type="submit">
-              <Settings size={16} />
-              Save Chama Rules
-            </ActionButton>
-          </form>
+            {!loading && chamas.length === 0 && (
+              <p className="py-6 text-center text-sm text-gray-400">
+                No Chamas registered yet
+              </p>
+            )}
+          </div>
         </Panel>
       </div>
 
-      {/*
-          RECENT AUDIT ACTIVITY
-
-          GET /api/audit-logs?limit=5
-
-          Backend should return the latest actions performed
-          within this chama, including the official's name,
-          action, and timestamp. */}
-
       <Panel
-        title="Recent Audit Activity"
-        action={
-          <ClipboardList
-            size={20}
-            className="text-green-800"
-          />
-        }
+        title="Global Platform Audit Logs"
       >
-        {auditRecords.length === 0 ? (
-          <p className="py-8 text-center text-sm text-gray-500">
-            No administrative activity has been recorded yet.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[600px] text-left text-sm">
-              <thead className="border-b border-gray-200 bg-gray-50 text-gray-500">
-                <tr>
-                  <th className="px-4 py-3 font-medium">Official</th>
-                  <th className="px-4 py-3 font-medium">Activity</th>
-                  <th className="px-4 py-3 font-medium">Date & Time</th>
+        <p className="mb-4 text-sm text-gray-500">
+          System-wide tamper-evident activity across all Chamas.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b bg-gray-50 text-xs uppercase text-gray-500">
+              <tr>
+                <th className="px-4 py-3">Timestamp</th>
+                <th className="px-4 py-3">Actor</th>
+                <th className="px-4 py-3">Action</th>
+                <th className="px-4 py-3">Resource</th>
+                <th className="px-4 py-3">Chama ID</th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y">
+              {auditLogs.map((log) => (
+                <tr key={log.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 text-xs text-gray-500">
+                    {log.created_at
+                      ? new Date(log.created_at).toLocaleString("en-KE")
+                      : "-"}
+                  </td>
+                  <td className="px-4 py-3 font-medium text-gray-800">
+                    {log.actor_name || "System"}
+                  </td>
+                  <td className="px-4 py-3">{log.action}</td>
+                  <td className="px-4 py-3">
+                    {log.table_name} #{log.record_id}
+                  </td>
+                  <td className="px-4 py-3">
+                    {log.chama_id ?? "Global"}
+                  </td>
                 </tr>
-              </thead>
+              ))}
 
-              <tbody>
-                {auditRecords.map((record) => (
-                  <tr
-                    key={record.id}
-                    className="border-b border-gray-100 hover:bg-gray-50"
+              {!loading && auditLogs.length === 0 && (
+                <tr>
+                  <td
+                    colSpan="5"
+                    className="px-4 py-8 text-center text-gray-400"
                   >
-                    <td className="px-4 py-4 font-semibold text-gray-800">
-                      {record.official}
-                    </td>
-
-                    <td className="px-4 py-4 text-gray-600">
-                      {record.action}
-                    </td>
-
-                    <td className="px-4 py-4 text-gray-500">
-                      {record.date}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Panel>
-
-      {/*
-          JOIN REQUEST DETAILS MODAL
-
-          No separate endpoint is required to open this modal.
-          It displays the selected request already loaded from
-          GET /api/join-requests.
-
-          Approve and Reject use:
-          PATCH /api/join-requests/<id> */}
-
-      {selectedRequest && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="join-request-title"
-            className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl"
-          >
-            <div className="mb-5 flex items-center justify-between">
-              <h2
-                id="join-request-title"
-                className="text-xl font-bold text-gray-900"
-              >
-                Join Request Details
-              </h2>
-
-              <button
-                type="button"
-                onClick={() => setSelectedRequest(null)}
-                aria-label="Close join request details"
-                className="text-gray-500 hover:text-gray-800"
-              >
-                <XCircle size={24} />
-              </button>
-            </div>
-
-            <form className="space-y-4">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Full Name
-                </label>
-
-                <input
-                  value={selectedRequest.name}
-                  readOnly
-                  className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Email Address
-                </label>
-
-                <input
-                  value={selectedRequest.email}
-                  readOnly
-                  className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Phone Number
-                </label>
-
-                <input
-                  value={selectedRequest.phone}
-                  readOnly
-                  className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Reason for Joining
-                </label>
-
-                <textarea
-                  value={selectedRequest.reason}
-                  readOnly
-                  rows={4}
-                  className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2"
-                />
-              </div>
-
-              <div className="flex flex-wrap justify-end gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setSelectedRequest(null)}
-                  className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Close
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleRequest(selectedRequest.id, "rejected")
-                  }
-                  className="rounded-lg bg-red-700 px-4 py-2 text-sm font-medium text-white hover:bg-red-800"
-                >
-                  Reject
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    handleRequest(selectedRequest.id, "approved")
-                  }
-                  className="rounded-lg bg-green-900 px-4 py-2 text-sm font-medium text-white hover:bg-green-800"
-                >
-                  Approve
-                </button>
-              </div>
-            </form>
-          </div>
+                    No global audit logs recorded yet
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
-      )}
-
+      </Panel>
     </div>
   );
 }
+
+
+
+
+
+
